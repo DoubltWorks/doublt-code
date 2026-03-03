@@ -1,0 +1,25 @@
+{
+  "name": "doublt-code",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Multi-session coding bridge with mobile sync — inspired by Happy Coder, powered by cmux-style session management",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "dev:server": "npm run dev -w packages/server",
+    "dev:cli": "npm run dev -w packages/cli",
+    "test": "npm test --workspaces --if-present",
+    "lint": "eslint packages/*/src/**/*.ts"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.5.0",
+    "eslint": "^9.0.0",
+    "tsx": "^4.7.0"
+  }
+}

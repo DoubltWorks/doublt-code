@@ -1,0 +1,24 @@
+{
+  "name": "@doublt/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/index.tsx",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "build": "echo 'Use expo build'"
+  },
+  "dependencies": {
+    "@doublt/shared": "*",
+    "expo": "~52.0.0",
+    "react": "18.3.1",
+    "react-native": "0.76.0",
+    "react-native-safe-area-context": "^4.8.0",
+    "expo-clipboard": "~7.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "~18.3.0",
+    "typescript": "^5.5.0"
+  }
+}
