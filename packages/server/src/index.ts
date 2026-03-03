@@ -41,6 +41,8 @@ import { AuthManager } from './api/AuthManager.js';
 import { WorkspaceManager } from './workspace/WorkspaceManager.js';
 import { TerminalSyncManager } from './terminal/TerminalSyncManager.js';
 import { PtyManager } from './terminal/PtyManager.js';
+import { ClaudeSessionRunner } from './claude/ClaudeSessionRunner.js';
+import { JsonStore } from './storage/JsonStore.js';
 import { NotificationManager } from './notification/NotificationManager.js';
 import { ApprovalPolicyManager } from './approval/ApprovalPolicyManager.js';
 import { TaskQueueManager } from './taskqueue/TaskQueueManager.js';
@@ -64,6 +66,8 @@ export class DoubltServer {
   readonly workspaceManager: WorkspaceManager;
   readonly terminalSyncManager: TerminalSyncManager;
   readonly ptyManager: PtyManager;
+  readonly claudeRunner: ClaudeSessionRunner;
+  readonly jsonStore: JsonStore;
   readonly notificationManager: NotificationManager;
   readonly approvalManager: ApprovalPolicyManager;
   readonly taskQueueManager: TaskQueueManager;
@@ -86,6 +90,7 @@ export class DoubltServer {
     this.workspaceManager = new WorkspaceManager(this.sessionManager);
     this.terminalSyncManager = new TerminalSyncManager();
     this.ptyManager = new PtyManager(this.terminalSyncManager);
+    this.jsonStore = new JsonStore({ dataDir: options.baseDir });
     this.notificationManager = new NotificationManager();
     this.approvalManager = new ApprovalPolicyManager();
     this.taskQueueManager = new TaskQueueManager();
@@ -93,6 +98,7 @@ export class DoubltServer {
     this.gitManager = new GitManager();
     this.costTracker = new CostTracker();
     this.searchManager = new SearchManager();
+    this.claudeRunner = new ClaudeSessionRunner(this.ptyManager, this.costTracker);
 
     this.wireUpEvents();
   }
@@ -314,6 +320,97 @@ export class DoubltServer {
 
     this.searchManager.on('search:indexed', () => {
       // Indexing events are internal, no broadcast needed
+    });
+
+    // ─── Claude Session Runner Events ─────────────────
+
+    this.claudeRunner.on('claude:started', ({ sessionId, prompt }) => {
+      this.digestManager.logEvent('command', sessionId, `Claude started${prompt ? `: ${prompt.slice(0, 100)}` : ''}`);
+    });
+
+    this.claudeRunner.on('claude:crashed', ({ sessionId, exitCode, restartCount, willRestart }) => {
+      this.connectionManager.broadcastToSession(sessionId, {
+        type: 'notification',
+        notification: {
+          sessionId,
+          type: 'error',
+          title: 'Claude crashed',
+          body: `Exit code ${exitCode}. Restart ${restartCount}/${5}. ${willRestart ? 'Auto-restarting...' : 'Giving up.'}`,
+          timestamp: Date.now(),
+          priority: 'high',
+          pushEnabled: true,
+        },
+      });
+      this.digestManager.logEvent('error', sessionId, `Claude crashed (exit ${exitCode}, restart ${restartCount})`);
+    });
+
+    this.claudeRunner.on('claude:max_restarts', ({ sessionId }) => {
+      this.connectionManager.broadcastToSession(sessionId, {
+        type: 'notification',
+        notification: {
+          sessionId,
+          type: 'error',
+          title: 'Claude stopped — max restarts exceeded',
+          body: 'Manual restart required. Check session for errors.',
+          timestamp: Date.now(),
+          priority: 'critical',
+          pushEnabled: true,
+        },
+      });
+    });
+
+    this.claudeRunner.on('claude:completed', ({ sessionId }) => {
+      this.connectionManager.broadcastToSession(sessionId, {
+        type: 'notification',
+        notification: {
+          sessionId,
+          type: 'completed',
+          title: 'Claude finished',
+          body: 'Task completed successfully.',
+          timestamp: Date.now(),
+          priority: 'normal',
+          pushEnabled: true,
+        },
+      });
+      this.digestManager.logEvent('command', sessionId, 'Claude completed');
+
+      // Auto-dequeue next task if available
+      this.autoDequeueNextTask();
+    });
+
+    this.claudeRunner.on('claude:budget_paused', ({ sessionId }) => {
+      this.connectionManager.broadcastToSession(sessionId, {
+        type: 'notification',
+        notification: {
+          sessionId,
+          type: 'error',
+          title: 'Budget exceeded — auto mode paused',
+          body: 'Resume manually after reviewing costs.',
+          timestamp: Date.now(),
+          priority: 'high',
+          pushEnabled: true,
+        },
+      });
+    });
+
+    // ─── Auto Task Execution ────────────────────────────
+
+    this.taskQueueManager.on('task:created', (_task) => {
+      // Check if we should auto-start the next task
+      const running = this.claudeRunner.listSessions().filter(s => s.status === 'running');
+      if (running.length === 0) {
+        this.autoDequeueNextTask();
+      }
+    });
+
+    // ─── JsonStore Events ───────────────────────────────
+
+    this.jsonStore.on('store:corrupted', ({ filename }) => {
+      console.warn(`[JsonStore] Corrupted file detected: ${filename}, attempting backup restore`);
+    });
+
+    this.jsonStore.on('store:restored_from_backup', ({ filename }) => {
+      console.log(`[JsonStore] Restored from backup: ${filename}`);
     });
 
     // ─── PTY Events ────────────────────────────────────
@@ -728,6 +825,66 @@ export class DoubltServer {
     }
   }
 
+  /**
+   * Auto-dequeue and start the next queued task in a new or existing session.
+   */
+  private autoDequeueNextTask(): void {
+    const next = this.taskQueueManager.dequeueNext();
+    if (!next) return;
+
+    this.taskQueueManager.startTask(next.id);
+
+    // Find or create a session for the task
+    const sessionId = next.sessionId;
+    if (sessionId && this.sessionManager.get(sessionId)) {
+      this.claudeRunner.startClaude(sessionId, {
+        prompt: `${next.title}\n\n${next.description}`,
+        autoRestart: true,
+      }).catch(err => {
+        this.taskQueueManager.failTask(next.id, err.message);
+      });
+    } else {
+      // Create a new session for the task
+      const session = this.sessionManager.create({
+        name: `task-${next.id}`,
+        workspaceId: next.workspaceId,
+      });
+
+      this.ptyManager.spawn(session.id).then(() => {
+        return this.claudeRunner.startClaude(session.id, {
+          prompt: `${next.title}\n\n${next.description}`,
+          autoRestart: true,
+        });
+      }).catch(err => {
+        this.taskQueueManager.failTask(next.id, err.message);
+      });
+    }
+  }
+
+  /**
+   * Save all manager state to JSON files.
+   */
+  async saveState(): Promise<void> {
+    const sessions = this.sessionManager.list();
+    const workspaces = this.workspaceManager.list();
+    const tasks = this.taskQueueManager.listTasks();
+    const policies = this.approvalManager.listPolicies();
+
+    await Promise.all([
+      this.jsonStore.save('sessions.json', sessions),
+      this.jsonStore.save('workspaces.json', workspaces),
+      this.jsonStore.save('tasks.json', tasks),
+      this.jsonStore.save('policies.json', policies),
+    ]);
+  }
+
+  /**
+   * Schedule debounced state persistence on any state change.
+   */
+  private scheduleSave(filename: string, getData: () => unknown): void {
+    this.jsonStore.scheduleSave(filename, getData());
+  }
+
   start(): void {
     const serverToken = this.authManager.generateServerToken();
     this.connectionManager.start(this.port);
@@ -757,6 +914,9 @@ export class DoubltServer {
   }
 
   stop(): void {
+    this.claudeRunner.destroy();
+    this.taskQueueManager.destroy();
+    this.jsonStore.destroy();
     this.ptyManager.killAll().catch(() => {});
     this.connectionManager.stop();
   }
@@ -789,6 +949,8 @@ export { AuthManager } from './api/AuthManager.js';
 export { WorkspaceManager } from './workspace/WorkspaceManager.js';
 export { TerminalSyncManager } from './terminal/TerminalSyncManager.js';
 export { PtyManager } from './terminal/PtyManager.js';
+export { ClaudeSessionRunner } from './claude/ClaudeSessionRunner.js';
+export { JsonStore } from './storage/JsonStore.js';
 export { NotificationManager } from './notification/NotificationManager.js';
 export { ApprovalPolicyManager } from './approval/ApprovalPolicyManager.js';
 export { TaskQueueManager } from './taskqueue/TaskQueueManager.js';

@@ -19,7 +19,7 @@ export interface ApprovalPolicy {
   updatedAt: number;
 }
 
-export type ApprovalPreset = 'conservative' | 'moderate' | 'permissive';
+export type ApprovalPreset = 'conservative' | 'moderate' | 'permissive' | 'full_auto';
 
 export interface ApprovalQueueItem {
   id: string;

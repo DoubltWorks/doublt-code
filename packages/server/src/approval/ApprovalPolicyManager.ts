@@ -209,6 +209,14 @@ export class ApprovalPolicyManager extends EventEmitter {
         ];
         break;
 
+      case 'full_auto':
+        name = 'Full Auto';
+        description = 'Auto-approve ALL operations. For --dangerously-skip-permissions 24/7 mode.';
+        rules = [
+          { toolPattern: '*', action: 'auto_approve' },
+        ];
+        break;
+
       default:
         throw new Error(`Unknown preset: ${preset as string}`);
     }
