@@ -822,6 +822,64 @@ export class DoubltServer {
         }
         break;
       }
+
+      // ─── Claude session messages ────────────────────────
+
+      case 'claude:start': {
+        this.claudeRunner.startClaude(msg.sessionId, {
+          prompt: msg.prompt,
+          autoRestart: msg.autoRestart ?? true,
+        }).then(() => {
+          this.connectionManager.sendToClient(clientId, {
+            type: 'claude:status:result',
+            sessions: this.claudeRunner.listSessions().map(s => ({
+              sessionId: s.sessionId,
+              status: s.status,
+              restartCount: s.restartCount,
+              lastStartedAt: s.lastStartedAt,
+            })),
+          });
+        }).catch(err => {
+          this.connectionManager.sendToClient(clientId, {
+            type: 'error',
+            code: 'CLAUDE_START_FAILED',
+            message: err.message,
+            sessionId: msg.sessionId,
+          });
+        });
+        break;
+      }
+
+      case 'claude:stop': {
+        this.claudeRunner.stopClaude(msg.sessionId).then(() => {
+          this.connectionManager.sendToClient(clientId, {
+            type: 'claude:status:result',
+            sessions: this.claudeRunner.listSessions().map(s => ({
+              sessionId: s.sessionId,
+              status: s.status,
+              restartCount: s.restartCount,
+              lastStartedAt: s.lastStartedAt,
+            })),
+          });
+        }).catch(() => {});
+        break;
+      }
+
+      case 'claude:status': {
+        const claudeSessions = msg.sessionId
+          ? this.claudeRunner.listSessions().filter(s => s.sessionId === msg.sessionId)
+          : this.claudeRunner.listSessions();
+        this.connectionManager.sendToClient(clientId, {
+          type: 'claude:status:result',
+          sessions: claudeSessions.map(s => ({
+            sessionId: s.sessionId,
+            status: s.status,
+            restartCount: s.restartCount,
+            lastStartedAt: s.lastStartedAt,
+          })),
+        });
+        break;
+      }
     }
   }
 

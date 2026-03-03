@@ -295,6 +295,24 @@ function handleDoubltmuxCommand(
       break;
     }
 
+    case 'C': { // Start claude in current session (uppercase C)
+      const pane = panes.activePane;
+      if (pane) {
+        bridge.send({ type: 'claude:start', sessionId: pane.sessionId, autoRestart: true });
+        console.log('\nStarting claude --dangerously-skip-permissions...');
+      }
+      break;
+    }
+
+    case 'X': { // Stop claude in current session (uppercase X)
+      const pane = panes.activePane;
+      if (pane) {
+        bridge.send({ type: 'claude:stop', sessionId: pane.sessionId });
+        console.log('\nStopping claude...');
+      }
+      break;
+    }
+
     case 'h': { // Handoff
       const pane = panes.activePane;
       if (pane) {
@@ -342,6 +360,8 @@ function handleDoubltmuxCommand(
       console.log('  Ctrl-b p  Previous pane');
       console.log('  Ctrl-b w  List sessions');
       console.log('  Ctrl-b m  Mobile pairing');
+      console.log('  Ctrl-b C  Start claude (auto mode)');
+      console.log('  Ctrl-b X  Stop claude');
       console.log('  Ctrl-b h  Handoff session');
       console.log('  Ctrl-b a  Approval policy');
       console.log('  Ctrl-b t  Task queue');

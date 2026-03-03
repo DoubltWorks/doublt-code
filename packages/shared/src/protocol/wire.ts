@@ -263,6 +263,25 @@ export interface TemplateUseMsg {
   templateId: string;
 }
 
+// ─── Claude session messages (Client → Server) ───────────────
+
+export interface ClaudeStartMsg {
+  type: 'claude:start';
+  sessionId: SessionId;
+  prompt?: string;
+  autoRestart?: boolean;
+}
+
+export interface ClaudeStopMsg {
+  type: 'claude:stop';
+  sessionId: SessionId;
+}
+
+export interface ClaudeStatusMsg {
+  type: 'claude:status';
+  sessionId?: SessionId;
+}
+
 export type ClientMessage =
   | AuthenticateMsg
   | SessionCreateMsg
@@ -307,7 +326,11 @@ export type ClientMessage =
   | SearchQueryMsg
   | TemplateListMsg
   | TemplateCreateMsg
-  | TemplateUseMsg;
+  | TemplateUseMsg
+  // Claude session
+  | ClaudeStartMsg
+  | ClaudeStopMsg
+  | ClaudeStatusMsg;
 
 // ─── Server → Client ────────────────────────────────────────
 
@@ -538,6 +561,18 @@ export interface TemplateUsedMsg {
   template: SessionTemplate;
 }
 
+// ─── Claude session messages (Server → Client) ───────────────
+
+export interface ClaudeStatusResultMsg {
+  type: 'claude:status:result';
+  sessions: Array<{
+    sessionId: SessionId;
+    status: 'idle' | 'running' | 'crashed' | 'stopped' | 'budget_paused';
+    restartCount: number;
+    lastStartedAt?: number;
+  }>;
+}
+
 export type ServerMessage =
   | AuthResultMsg
   | SessionCreatedMsg
@@ -583,7 +618,9 @@ export type ServerMessage =
   | SearchResultsMsg
   | TemplateListResultMsg
   | TemplateCreatedMsg
-  | TemplateUsedMsg;
+  | TemplateUsedMsg
+  // Claude session
+  | ClaudeStatusResultMsg;
 
 // ─── Unified ─────────────────────────────────────────────────
 
