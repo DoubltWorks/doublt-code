@@ -104,6 +104,26 @@ describe('Wire Protocol', () => {
       };
       expect(decodeMessage(encodeMessage(msg))).toEqual(msg);
     });
+
+    it('should roundtrip a claude:start message', () => {
+      const msg: ClientMessage = {
+        type: 'claude:start',
+        sessionId: 'sess-1',
+        prompt: 'fix the bug in auth module',
+        autoRestart: true,
+      };
+      expect(decodeMessage(encodeMessage(msg))).toEqual(msg);
+    });
+
+    it('should roundtrip a claude:stop message', () => {
+      const msg: ClientMessage = { type: 'claude:stop', sessionId: 'sess-1' };
+      expect(decodeMessage(encodeMessage(msg))).toEqual(msg);
+    });
+
+    it('should roundtrip a claude:status message', () => {
+      const msg: ClientMessage = { type: 'claude:status', sessionId: 'sess-1' };
+      expect(decodeMessage(encodeMessage(msg))).toEqual(msg);
+    });
   });
 
   describe('Server messages roundtrip', () => {
@@ -224,6 +244,17 @@ describe('Wire Protocol', () => {
         parentSessionId: 'sess-1',
         newSessionId: 'sess-2',
         handoffSummary: 'Context transferred',
+      };
+      expect(decodeMessage(encodeMessage(msg))).toEqual(msg);
+    });
+
+    it('should roundtrip a claude:status:result message', () => {
+      const msg: ServerMessage = {
+        type: 'claude:status:result',
+        sessions: [
+          { sessionId: 'sess-1', status: 'running', restartCount: 0, lastStartedAt: 1700000000000 },
+          { sessionId: 'sess-2', status: 'idle', restartCount: 2 },
+        ],
       };
       expect(decodeMessage(encodeMessage(msg))).toEqual(msg);
     });

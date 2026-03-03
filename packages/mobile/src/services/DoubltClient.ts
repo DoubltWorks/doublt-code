@@ -265,6 +265,11 @@ export class DoubltClient extends EventEmitter {
       case 'template:used':
         this.emit('templateUsed', msg.template);
         break;
+
+      // Claude session
+      case 'claude:status:result':
+        this.emit('claudeStatusResult', msg.sessions);
+        break;
     }
   }
 
@@ -462,5 +467,19 @@ export class DoubltClient extends EventEmitter {
 
   useTemplate(templateId: string): void {
     this.sendRaw({ type: 'template:use', templateId });
+  }
+
+  // ─── Claude Session API ──────────────────────────
+
+  startClaude(sessionId: SessionId, prompt?: string, autoRestart = true): void {
+    this.sendRaw({ type: 'claude:start', sessionId, prompt, autoRestart });
+  }
+
+  stopClaude(sessionId: SessionId): void {
+    this.sendRaw({ type: 'claude:stop', sessionId });
+  }
+
+  getClaudeStatus(sessionId?: SessionId): void {
+    this.sendRaw({ type: 'claude:status', sessionId });
   }
 }
