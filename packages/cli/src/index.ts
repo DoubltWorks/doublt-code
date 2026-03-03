@@ -31,7 +31,7 @@ program
   .description('Start the doublt server and open default workspace + session')
   .option('-p, --port <port>', 'Server port', '9800')
   .option('-n, --name <name>', 'Workspace name', 'default')
-  .action(async (opts) => {
+  .action(async (opts: { port: string; name: string }) => {
     const port = parseInt(opts.port, 10);
     const server = new DoubltServer({ port });
     server.start();
@@ -236,7 +236,7 @@ program
   .command('connect <url>')
   .description('Connect to a running doublt server')
   .option('-t, --token <token>', 'Authentication token')
-  .action(async (url, opts) => {
+  .action(async (url: string, opts: { token?: string }) => {
     if (!opts.token) {
       console.error('Token required. Use --token or set DOUBLT_TOKEN env var.');
       process.exit(1);

@@ -662,13 +662,13 @@ export class DoubltServer {
       }
 
       case 'template:list': {
-        const templates = this.searchManager.listTemplates(msg.category);
+        const templates = this.searchManager.listTemplates(msg.category as 'code_review' | 'bug_fix' | 'feature_dev' | 'refactoring' | 'custom' | undefined);
         this.connectionManager.sendToClient(clientId, { type: 'template:list:result', templates });
         break;
       }
 
       case 'template:create': {
-        const template = this.searchManager.createTemplate(msg.name, msg.description, msg.category as any, msg.prompts, msg.tags ?? []);
+        const template = this.searchManager.createTemplate(msg.name, msg.description, msg.category as 'code_review' | 'bug_fix' | 'feature_dev' | 'refactoring' | 'custom', msg.prompts, msg.tags ?? []);
         this.connectionManager.sendToClient(clientId, { type: 'template:created', template });
         break;
       }
