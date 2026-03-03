@@ -17,6 +17,21 @@ export type {
 } from './types/message.js';
 
 export type {
+  WorkspaceId,
+  WorkspaceStatus,
+  Workspace,
+  WorkspaceCreateOptions,
+  WorkspaceListItem,
+} from './types/workspace.js';
+
+export type {
+  TerminalOutput,
+  TerminalInput,
+  TerminalResize,
+  LongRunningCommand,
+} from './types/terminal.js';
+
+export type {
   ClientMessage,
   ServerMessage,
   WireMessage,

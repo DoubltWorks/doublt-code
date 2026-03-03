@@ -1,30 +1,36 @@
 #!/usr/bin/env node
 
 /**
- * doublt — CLI entry point.
+ * doublt — CLI entry point for doubltmux.
  *
- * Starts the doublt-code server and cmux-style session manager.
+ * Starts the doublt-code server and doubltmux-style session manager.
  * Can also connect to an existing server as a client.
+ *
+ * doubltmux provides cmux-style UI/UX with:
+ * - Workspace management (group sessions together)
+ * - Session management (create, switch, list)
+ * - Terminal I/O sync (PC <-> mobile)
+ * - Ctrl-b prefix keybindings (tmux-compatible)
  */
 
 import { Command } from 'commander';
 import { DoubltServer } from '@doublt/server';
 import { PaneManager } from './cmux/PaneManager.js';
 import { ServerBridge } from './bridge/ServerBridge.js';
-import type { ServerMessage, SessionListItem } from '@doublt/shared';
+import type { ServerMessage, SessionListItem, WorkspaceListItem } from '@doublt/shared';
 
 const program = new Command();
 
 program
   .name('doublt')
-  .description('Multi-session coding bridge with mobile sync')
+  .description('doubltmux — Multi-session coding bridge with mobile sync')
   .version('0.1.0');
 
 program
   .command('start')
-  .description('Start the doublt server and open default session')
+  .description('Start the doublt server and open default workspace + session')
   .option('-p, --port <port>', 'Server port', '9800')
-  .option('-n, --name <name>', 'Session name', 'default')
+  .option('-n, --name <name>', 'Workspace name', 'default')
   .action(async (opts) => {
     const port = parseInt(opts.port, 10);
     const server = new DoubltServer({ port });
@@ -39,20 +45,44 @@ program
     });
 
     const paneManager = new PaneManager();
+    let currentWorkspaceId: string | null = null;
 
     bridge.on('connected', () => {
       console.log('Connected to doublt server');
+      bridge.listWorkspaces();
       bridge.listSessions();
+    });
+
+    bridge.on('message:workspace:list:result', (msg: ServerMessage & { type: 'workspace:list:result' }) => {
+      if (msg.workspaces.length > 0 && !currentWorkspaceId) {
+        currentWorkspaceId = msg.workspaces[0].id;
+        console.log(`Active workspace: ${msg.workspaces[0].name} (${currentWorkspaceId})`);
+      }
+    });
+
+    bridge.on('message:workspace:created', (msg: ServerMessage & { type: 'workspace:created' }) => {
+      console.log(`\nWorkspace created: ${msg.workspace.name} (${msg.workspace.id})`);
+      currentWorkspaceId = msg.workspace.id;
     });
 
     bridge.on('message:session:list:result', (msg: ServerMessage & { type: 'session:list:result' }) => {
       if (msg.sessions.length > 0) {
         const session = msg.sessions[0];
-        const pane = paneManager.createPane(session.id);
-        pane.updateSessionInfo(session);
-        bridge.attachSession(session.id);
-        console.log(`Attached to session: ${session.name} (${session.id})`);
+        if (!paneManager.getPaneBySessionId(session.id)) {
+          const pane = paneManager.createPane(session.id);
+          pane.updateSessionInfo(session);
+          bridge.attachSession(session.id);
+          console.log(`Attached to session: ${session.name} (${session.id})`);
+        }
       }
+    });
+
+    bridge.on('message:session:created', (msg: ServerMessage & { type: 'session:created' }) => {
+      const pane = paneManager.createPane(msg.session.id);
+      pane.updateSessionInfo(msg.session);
+      bridge.attachSession(msg.session.id);
+      console.log(`\nSession created: ${msg.session.name} (${msg.session.id})`);
+      console.log(`${paneManager.renderStatusBar(process.stdout.columns ?? 80)}`);
     });
 
     bridge.on('message:chat:message', (msg: ServerMessage & { type: 'chat:message' }) => {
@@ -71,11 +101,25 @@ program
       }
     });
 
+    // Terminal output sync — display output from other clients
+    bridge.on('message:terminal:output', (msg: ServerMessage & { type: 'terminal:output' }) => {
+      process.stdout.write(msg.output.data);
+    });
+
+    // Command status tracking
+    bridge.on('message:command:status', (msg: ServerMessage & { type: 'command:status' }) => {
+      const cmd = msg.command;
+      if (cmd.status === 'completed') {
+        console.log(`\n[done] "${cmd.command}" completed (exit ${cmd.exitCode})`);
+      } else if (cmd.status === 'failed') {
+        console.log(`\n[fail] "${cmd.command}" failed (exit ${cmd.exitCode})`);
+      }
+    });
+
     bridge.on('message:handoff:ready', (msg: ServerMessage & { type: 'handoff:ready' }) => {
-      console.log(`\n⚡ Session handoff: ${msg.parentSessionId} → ${msg.newSessionId}`);
+      console.log(`\n>> Session handoff: ${msg.parentSessionId} -> ${msg.newSessionId}`);
       console.log(`   ${msg.handoffSummary}`);
 
-      // Create new pane for the handed-off session
       const pane = paneManager.createPane(msg.newSessionId);
       bridge.attachSession(msg.newSessionId);
     });
@@ -100,9 +144,11 @@ program
     console.log(`\nMobile pairing code: ${pairing.code}`);
     console.log(`Pairing URL: ${pairing.url}`);
 
-    // Show cmux status bar
+    // Show doubltmux status bar
     console.log(`\n${paneManager.renderStatusBar(process.stdout.columns ?? 80)}`);
-    console.log('Ctrl-b ? for help | Ctrl-b c new session | Ctrl-b m mobile pair');
+    console.log('doubltmux keybindings:');
+    console.log('  Ctrl-b ?  help  |  Ctrl-b c  new session  |  Ctrl-b W  new workspace');
+    console.log('  Ctrl-b m  pair  |  Ctrl-b w  list sessions |  Ctrl-b S  list workspaces');
 
     // Handle stdin for interactive mode
     if (process.stdin.isTTY) {
@@ -123,7 +169,7 @@ program
 
         if (prefixMode) {
           prefixMode = false;
-          handleCmuxCommand(key, paneManager, bridge, server);
+          handleDoubltmuxCommand(key, paneManager, bridge, server, currentWorkspaceId);
           return;
         }
 
@@ -139,6 +185,9 @@ program
             const pane = paneManager.activePane;
             if (pane) {
               bridge.sendChat(pane.sessionId, inputBuffer.trim());
+
+              // Also sync terminal input to mobile
+              bridge.sendTerminalInput(pane.sessionId, inputBuffer.trim() + '\n');
             }
             inputBuffer = '';
             process.stdout.write('\n> ');
@@ -161,6 +210,18 @@ program
       });
 
       process.stdout.write('> ');
+
+      // Send terminal size on start and on resize
+      process.stdout.on('resize', () => {
+        const pane = paneManager.activePane;
+        if (pane) {
+          bridge.sendTerminalResize(
+            pane.sessionId,
+            process.stdout.columns ?? 80,
+            process.stdout.rows ?? 24
+          );
+        }
+      });
     }
 
     // Graceful shutdown
@@ -188,7 +249,15 @@ program
 
     bridge.on('connected', () => {
       console.log(`Connected to ${url}`);
+      bridge.listWorkspaces();
       bridge.listSessions();
+    });
+
+    bridge.on('message:workspace:list:result', (msg: ServerMessage & { type: 'workspace:list:result' }) => {
+      console.log('Workspaces:');
+      for (const ws of msg.workspaces) {
+        console.log(`  ${ws.index}: ${ws.name} [${ws.status}] (${ws.sessionCount} sessions, ${ws.activeSessionCount} active)`);
+      }
     });
 
     bridge.on('message:session:list:result', (msg: ServerMessage & { type: 'session:list:result' }) => {
@@ -208,11 +277,31 @@ program
     console.log('Start the server first with "doublt start", then use Ctrl-b m to pair.');
   });
 
-function handleCmuxCommand(key: string, panes: PaneManager, bridge: ServerBridge, server: DoubltServer): void {
+function handleDoubltmuxCommand(
+  key: string,
+  panes: PaneManager,
+  bridge: ServerBridge,
+  server: DoubltServer,
+  currentWorkspaceId: string | null,
+): void {
   switch (key) {
-    case 'c': // Create new session
-      bridge.createSession(`session-${panes.paneCount}`);
+    case 'c': // Create new session (in current workspace)
+      bridge.createSession(
+        `session-${panes.paneCount}`,
+        undefined,
+        currentWorkspaceId ?? undefined,
+      );
       console.log('\nCreating new session...');
+      break;
+
+    case 'W': // Create new workspace (uppercase W)
+      bridge.createWorkspace(`workspace-${Date.now()}`);
+      console.log('\nCreating new workspace...');
+      break;
+
+    case 'S': // List workspaces (uppercase S)
+      bridge.listWorkspaces();
+      console.log('\nListing workspaces...');
       break;
 
     case 'n': // Next pane
@@ -226,14 +315,13 @@ function handleCmuxCommand(key: string, panes: PaneManager, bridge: ServerBridge
       break;
 
     case 'w': // List sessions
-      bridge.listSessions();
+      bridge.listSessions(currentWorkspaceId ?? undefined);
       break;
 
     case 'm': { // Mobile pairing
       const pairing = server.getPairingInfo();
       console.log(`\nMobile pairing code: ${pairing.code}`);
       console.log(`URL: ${pairing.url}`);
-      // In a full implementation, render QR code here with qrcode-terminal
       break;
     }
 
@@ -263,8 +351,10 @@ function handleCmuxCommand(key: string, panes: PaneManager, bridge: ServerBridge
       break;
 
     case '?': // Help
-      console.log('\ncmux keybindings:');
-      console.log('  Ctrl-b c  Create new session');
+      console.log('\ndoubltmux keybindings:');
+      console.log('  Ctrl-b c  Create new session (in current workspace)');
+      console.log('  Ctrl-b W  Create new workspace');
+      console.log('  Ctrl-b S  List workspaces');
       console.log('  Ctrl-b n  Next pane');
       console.log('  Ctrl-b p  Previous pane');
       console.log('  Ctrl-b w  List sessions');
@@ -272,6 +362,7 @@ function handleCmuxCommand(key: string, panes: PaneManager, bridge: ServerBridge
       console.log('  Ctrl-b h  Handoff session');
       console.log('  Ctrl-b x  Close pane');
       console.log('  Ctrl-b d  Detach');
+      console.log('  Ctrl-b 0-9  Switch to pane by index');
       break;
 
     default:

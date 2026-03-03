@@ -3,21 +3,28 @@
  *
  * Navigation flow:
  * 1. PairScreen: User pairs with PC (QR code or manual entry)
- * 2. SessionListScreen: Shows all sessions (cmux-style list)
- * 3. ChatScreen: Interact with a session (send messages, approve tools)
+ * 2. WorkspaceListScreen: Shows all workspaces (doubltmux groups)
+ * 3. SessionListScreen: Shows sessions in selected workspace
+ * 4. ChatScreen: Interact with a session (send messages, approve tools)
+ * 5. TerminalScreen: View terminal output synced from PC
+ * 6. NotificationScreen: View all notifications
  *
  * The app maintains a persistent WebSocket connection to the doublt server.
  * Both mobile and PC can interact with sessions simultaneously.
+ * Background task service keeps connection alive for push notifications.
  */
 
 import React, { useState } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useDoublt } from './hooks/useDoublt';
 import { PairScreen } from './screens/PairScreen';
+import { WorkspaceListScreen } from './screens/WorkspaceListScreen';
 import { SessionListScreen } from './screens/SessionListScreen';
 import { ChatScreen } from './screens/ChatScreen';
+import { TerminalScreen } from './screens/TerminalScreen';
+import { NotificationScreen } from './screens/NotificationScreen';
 
-type Screen = 'pair' | 'sessions' | 'chat';
+type Screen = 'pair' | 'workspaces' | 'sessions' | 'chat' | 'terminal' | 'notifications';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<Screen>('pair');
@@ -28,12 +35,8 @@ export default function App() {
   // Auto-navigate on connection state changes
   React.useEffect(() => {
     if (doublt.connectionState === 'connected' && currentScreen === 'pair') {
-      setCurrentScreen('sessions');
+      setCurrentScreen('workspaces');
       setAuthError(undefined);
-    }
-    if (doublt.connectionState === 'disconnected' && currentScreen !== 'pair') {
-      // Only go back to pair if we've fully lost connection
-      // Don't navigate during reconnection attempts
     }
   }, [doublt.connectionState, currentScreen]);
 
@@ -42,9 +45,19 @@ export default function App() {
     doublt.connect(serverUrl, token);
   };
 
+  const handleSelectWorkspace = (workspaceId: string) => {
+    doublt.selectWorkspace(workspaceId);
+    setCurrentScreen('sessions');
+  };
+
   const handleSelectSession = (sessionId: string) => {
     doublt.selectSession(sessionId);
     setCurrentScreen('chat');
+  };
+
+  const handleOpenTerminal = (sessionId: string) => {
+    doublt.selectSession(sessionId);
+    setCurrentScreen('terminal');
   };
 
   const handleHandoff = (sessionId?: string) => {
@@ -54,36 +67,56 @@ export default function App() {
     doublt.triggerHandoff();
   };
 
-  const activeSession = doublt.sessions.find(s => s.id === doublt.activeSessionId) ?? null;
+  const handleNotificationSelect = (notification: { id: string; sessionId: string }) => {
+    doublt.markNotificationRead(notification.id);
+    doublt.selectSession(notification.sessionId);
+    setCurrentScreen('chat');
+  };
 
-  switch (currentScreen) {
-    case 'pair':
-      return (
-        <SafeAreaProvider>
+  const activeSession = doublt.sessions.find(s => s.id === doublt.activeSessionId) ?? null;
+  const activeWorkspace = doublt.workspaces.find(ws => ws.id === doublt.activeWorkspaceId) ?? null;
+
+  const renderScreen = () => {
+    switch (currentScreen) {
+      case 'pair':
+        return (
           <PairScreen
             onConnect={handleConnect}
             connectionState={doublt.connectionState}
             error={authError}
           />
-        </SafeAreaProvider>
-      );
+        );
 
-    case 'sessions':
-      return (
-        <SafeAreaProvider>
+      case 'workspaces':
+        return (
+          <WorkspaceListScreen
+            workspaces={doublt.workspaces}
+            activeWorkspaceId={doublt.activeWorkspaceId}
+            onSelectWorkspace={handleSelectWorkspace}
+            onCreateWorkspace={() => doublt.createWorkspace()}
+            connectionState={doublt.connectionState}
+            unreadNotificationCount={doublt.unreadNotificationCount}
+            onOpenNotifications={() => setCurrentScreen('notifications')}
+          />
+        );
+
+      case 'sessions':
+        return (
           <SessionListScreen
-            sessions={doublt.sessions}
+            sessions={doublt.workspaceSessions}
             activeSessionId={doublt.activeSessionId}
+            activeWorkspace={activeWorkspace}
             onSelectSession={handleSelectSession}
+            onOpenTerminal={handleOpenTerminal}
             onHandoff={handleHandoff}
+            onCreateSession={() => doublt.createSession()}
+            onBack={() => setCurrentScreen('workspaces')}
             connectionState={doublt.connectionState}
           />
-        </SafeAreaProvider>
-      );
+        );
 
-    case 'chat':
-      return (
-        <SafeAreaProvider>
+      case 'chat':
+        return (
           <ChatScreen
             sessionInfo={activeSession}
             messages={doublt.activeMessages}
@@ -93,7 +126,35 @@ export default function App() {
             onHandoff={() => handleHandoff()}
             onBack={() => setCurrentScreen('sessions')}
           />
-        </SafeAreaProvider>
-      );
-  }
+        );
+
+      case 'terminal':
+        return (
+          <TerminalScreen
+            sessionInfo={activeSession}
+            terminalOutput={doublt.activeTerminalOutput}
+            runningCommands={doublt.runningCommands}
+            onSendInput={doublt.sendTerminalInput}
+            onBack={() => setCurrentScreen('sessions')}
+          />
+        );
+
+      case 'notifications':
+        return (
+          <NotificationScreen
+            notifications={doublt.notifications}
+            unreadCount={doublt.unreadNotificationCount}
+            onSelectNotification={handleNotificationSelect}
+            onMarkAllRead={doublt.markAllNotificationsRead}
+            onBack={() => setCurrentScreen('workspaces')}
+          />
+        );
+    }
+  };
+
+  return (
+    <SafeAreaProvider>
+      {renderScreen()}
+    </SafeAreaProvider>
+  );
 }

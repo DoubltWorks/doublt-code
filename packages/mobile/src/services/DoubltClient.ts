@@ -5,6 +5,12 @@
  * Unlike Happy Coder's separate remote mode, this client
  * connects as a co-participant alongside the CLI — both can
  * send messages and receive updates simultaneously.
+ *
+ * Extended with:
+ * - Workspace management (list, create, switch)
+ * - Terminal I/O sync (view PC terminal output on mobile)
+ * - Push notification token registration
+ * - Long-running command tracking
  */
 
 import { EventEmitter } from 'events';
@@ -12,8 +18,7 @@ import type {
   ClientMessage,
   ServerMessage,
   SessionId,
-  SessionListItem,
-  ChatMessage,
+  WorkspaceId,
 } from '@doublt/shared';
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
@@ -35,13 +40,8 @@ export class DoubltClient extends EventEmitter {
     return this.state;
   }
 
-  /**
-   * Connect to server using pairing info (from QR code scan).
-   */
   connectWithPairing(host: string, port: number, pairingCode: string): void {
     this.serverUrl = `ws://${host}:${port}`;
-    // In a real implementation, the pairing code would be exchanged
-    // for a token via an HTTP endpoint first
     this.token = pairingCode;
     this.connect();
   }
@@ -61,7 +61,6 @@ export class DoubltClient extends EventEmitter {
       this.ws = new WebSocket(this.serverUrl);
 
       this.ws.onopen = () => {
-        // Authenticate as mobile client
         this.sendRaw({
           type: 'authenticate',
           token: this.token,
@@ -107,8 +106,8 @@ export class DoubltClient extends EventEmitter {
           this.reconnectAttempts = 0;
           this.emit('stateChanged', this.state);
           this.emit('connected');
-          // Request session list
           this.listSessions();
+          this.listWorkspaces();
         } else {
           this.emit('authFailed', msg.error);
           this.disconnect();
@@ -118,19 +117,15 @@ export class DoubltClient extends EventEmitter {
       case 'session:list:result':
         this.emit('sessionsUpdated', msg.sessions);
         break;
-
       case 'session:updated':
         this.emit('sessionUpdated', msg.session);
         break;
-
       case 'session:created':
         this.emit('sessionCreated', msg.session);
         break;
-
       case 'chat:message':
         this.emit('chatMessage', msg.message);
         break;
-
       case 'chat:stream':
         this.emit('chatStream', {
           sessionId: msg.sessionId,
@@ -139,15 +134,12 @@ export class DoubltClient extends EventEmitter {
           done: msg.done,
         });
         break;
-
       case 'tool:use':
         this.emit('toolUse', msg.tool);
         break;
-
       case 'notification':
         this.emit('notification', msg.notification);
         break;
-
       case 'handoff:ready':
         this.emit('handoffReady', {
           parentSessionId: msg.parentSessionId,
@@ -155,9 +147,35 @@ export class DoubltClient extends EventEmitter {
           summary: msg.handoffSummary,
         });
         break;
-
       case 'error':
         this.emit('serverError', { code: msg.code, message: msg.message });
+        break;
+
+      // Workspace messages
+      case 'workspace:list:result':
+        this.emit('workspacesUpdated', msg.workspaces);
+        break;
+      case 'workspace:created':
+        this.emit('workspaceCreated', msg.workspace);
+        break;
+      case 'workspace:updated':
+        this.emit('workspaceUpdated', msg.workspace);
+        break;
+      case 'workspace:deleted':
+        this.emit('workspaceDeleted', msg.workspaceId);
+        break;
+
+      // Terminal sync
+      case 'terminal:output':
+        this.emit('terminalOutput', msg.output);
+        break;
+      case 'terminal:resized':
+        this.emit('terminalResized', msg.resize);
+        break;
+
+      // Command tracking
+      case 'command:status':
+        this.emit('commandStatus', msg.command);
         break;
     }
   }
@@ -191,10 +209,10 @@ export class DoubltClient extends EventEmitter {
     }
   }
 
-  // ─── Public API ───────────────────────────────────
+  // ─── Session API ────────────────────────────────────
 
-  listSessions(): void {
-    this.sendRaw({ type: 'session:list' });
+  listSessions(workspaceId?: WorkspaceId): void {
+    this.sendRaw({ type: 'session:list', workspaceId });
   }
 
   attachSession(sessionId: SessionId): void {
@@ -203,6 +221,10 @@ export class DoubltClient extends EventEmitter {
 
   detachSession(sessionId: SessionId): void {
     this.sendRaw({ type: 'session:detach', sessionId });
+  }
+
+  createSession(name?: string, workspaceId?: WorkspaceId): void {
+    this.sendRaw({ type: 'session:create', options: { name, workspaceId } });
   }
 
   sendMessage(sessionId: SessionId, content: string): void {
@@ -215,5 +237,42 @@ export class DoubltClient extends EventEmitter {
 
   triggerHandoff(sessionId: SessionId): void {
     this.sendRaw({ type: 'handoff:trigger', sessionId });
+  }
+
+  // ─── Workspace API ──────────────────────────────────
+
+  listWorkspaces(): void {
+    this.sendRaw({ type: 'workspace:list' });
+  }
+
+  createWorkspace(name?: string, cwd?: string): void {
+    this.sendRaw({ type: 'workspace:create', options: { name, cwd } });
+  }
+
+  deleteWorkspace(workspaceId: WorkspaceId): void {
+    this.sendRaw({ type: 'workspace:delete', workspaceId });
+  }
+
+  renameWorkspace(workspaceId: WorkspaceId, name: string): void {
+    this.sendRaw({ type: 'workspace:rename', workspaceId, name });
+  }
+
+  // ─── Terminal sync API ──────────────────────────────
+
+  sendTerminalInput(sessionId: SessionId, data: string): void {
+    this.sendRaw({
+      type: 'terminal:input',
+      input: { sessionId, data, timestamp: Date.now() },
+    });
+  }
+
+  // ─── Push notification API ──────────────────────────
+
+  registerPushToken(pushToken: string, platform: 'ios' | 'android'): void {
+    this.sendRaw({ type: 'push:register', pushToken, platform });
+  }
+
+  unregisterPushToken(): void {
+    this.sendRaw({ type: 'push:unregister' });
   }
 }

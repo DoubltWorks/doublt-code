@@ -4,10 +4,18 @@
  * All communication between server, CLI, and mobile uses this protocol.
  * The key design difference from Happy Coder: there is NO mode switching.
  * All clients share the same bidirectional stream simultaneously.
+ *
+ * Extended with:
+ * - Workspace management (create, list, switch)
+ * - Terminal I/O sync (output streaming, input relay)
+ * - Long-running command tracking
+ * - Push notification registration
  */
 
 import type { SessionId, ClientId, ClientType, SessionListItem, SessionCreateOptions } from '../types/session.js';
 import type { ChatMessage, ToolUseMessage, SessionNotification } from '../types/message.js';
+import type { WorkspaceId, WorkspaceListItem, WorkspaceCreateOptions } from '../types/workspace.js';
+import type { TerminalOutput, TerminalInput, TerminalResize, LongRunningCommand } from '../types/terminal.js';
 
 // ─── Client → Server ────────────────────────────────────────
 
@@ -16,6 +24,8 @@ export interface AuthenticateMsg {
   token: string;
   clientType: ClientType;
   deviceInfo: string;
+  /** Push notification token for mobile clients */
+  pushToken?: string;
 }
 
 export interface SessionCreateMsg {
@@ -35,6 +45,8 @@ export interface SessionDetachMsg {
 
 export interface SessionListMsg {
   type: 'session:list';
+  /** Optional: filter sessions by workspace */
+  workspaceId?: WorkspaceId;
 }
 
 export interface SendChatMsg {
@@ -55,6 +67,52 @@ export interface HandoffTriggerMsg {
   sessionId: SessionId;
 }
 
+// ─── Workspace messages (Client → Server) ───────────────────
+
+export interface WorkspaceCreateMsg {
+  type: 'workspace:create';
+  options: WorkspaceCreateOptions;
+}
+
+export interface WorkspaceListMsg {
+  type: 'workspace:list';
+}
+
+export interface WorkspaceDeleteMsg {
+  type: 'workspace:delete';
+  workspaceId: WorkspaceId;
+}
+
+export interface WorkspaceRenameMsg {
+  type: 'workspace:rename';
+  workspaceId: WorkspaceId;
+  name: string;
+}
+
+// ─── Terminal sync messages (Client → Server) ────────────────
+
+export interface TerminalInputMsg {
+  type: 'terminal:input';
+  input: TerminalInput;
+}
+
+export interface TerminalResizeMsg {
+  type: 'terminal:resize';
+  resize: TerminalResize;
+}
+
+// ─── Push notification registration (Client → Server) ────────
+
+export interface PushRegisterMsg {
+  type: 'push:register';
+  pushToken: string;
+  platform: 'ios' | 'android';
+}
+
+export interface PushUnregisterMsg {
+  type: 'push:unregister';
+}
+
 export type ClientMessage =
   | AuthenticateMsg
   | SessionCreateMsg
@@ -63,7 +121,15 @@ export type ClientMessage =
   | SessionListMsg
   | SendChatMsg
   | ApproveToolMsg
-  | HandoffTriggerMsg;
+  | HandoffTriggerMsg
+  | WorkspaceCreateMsg
+  | WorkspaceListMsg
+  | WorkspaceDeleteMsg
+  | WorkspaceRenameMsg
+  | TerminalInputMsg
+  | TerminalResizeMsg
+  | PushRegisterMsg
+  | PushUnregisterMsg;
 
 // ─── Server → Client ────────────────────────────────────────
 
@@ -126,6 +192,47 @@ export interface ErrorMsg {
   sessionId?: SessionId;
 }
 
+// ─── Workspace messages (Server → Client) ───────────────────
+
+export interface WorkspaceCreatedMsg {
+  type: 'workspace:created';
+  workspace: WorkspaceListItem;
+}
+
+export interface WorkspaceListResultMsg {
+  type: 'workspace:list:result';
+  workspaces: WorkspaceListItem[];
+}
+
+export interface WorkspaceUpdatedMsg {
+  type: 'workspace:updated';
+  workspace: WorkspaceListItem;
+}
+
+export interface WorkspaceDeletedMsg {
+  type: 'workspace:deleted';
+  workspaceId: WorkspaceId;
+}
+
+// ─── Terminal sync messages (Server → Client) ────────────────
+
+export interface TerminalOutputMsg {
+  type: 'terminal:output';
+  output: TerminalOutput;
+}
+
+export interface TerminalResizedMsg {
+  type: 'terminal:resized';
+  resize: TerminalResize;
+}
+
+// ─── Long-running command tracking (Server → Client) ─────────
+
+export interface CommandStatusMsg {
+  type: 'command:status';
+  command: LongRunningCommand;
+}
+
 export type ServerMessage =
   | AuthResultMsg
   | SessionCreatedMsg
@@ -136,7 +243,14 @@ export type ServerMessage =
   | ToolUseMsg
   | NotificationMsg
   | HandoffReadyMsg
-  | ErrorMsg;
+  | ErrorMsg
+  | WorkspaceCreatedMsg
+  | WorkspaceListResultMsg
+  | WorkspaceUpdatedMsg
+  | WorkspaceDeletedMsg
+  | TerminalOutputMsg
+  | TerminalResizedMsg
+  | CommandStatusMsg;
 
 // ─── Unified ─────────────────────────────────────────────────
 

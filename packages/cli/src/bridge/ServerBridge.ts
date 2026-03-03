@@ -5,6 +5,8 @@
  * Unlike Happy Coder's approach where reconnection failures cause
  * "stuck" states, this bridge handles disconnects gracefully and
  * can operate in a degraded local-only mode if the server is down.
+ *
+ * Extended with workspace management and terminal sync support.
  */
 
 import { EventEmitter } from 'node:events';
@@ -15,7 +17,7 @@ import {
   type ClientMessage,
   type ServerMessage,
 } from '@doublt/shared';
-import type { SessionId } from '@doublt/shared';
+import type { SessionId, WorkspaceId, WorkspaceCreateOptions, TerminalInput, TerminalResize } from '@doublt/shared';
 
 export interface BridgeOptions {
   serverUrl: string;
@@ -179,10 +181,10 @@ export class ServerBridge extends EventEmitter {
     }
   }
 
-  // ─── Convenience methods ────────────────────────────
+  // ─── Session convenience methods ─────────────────────
 
-  createSession(name?: string, cwd?: string): void {
-    this.send({ type: 'session:create', options: { name, cwd } });
+  createSession(name?: string, cwd?: string, workspaceId?: string): void {
+    this.send({ type: 'session:create', options: { name, cwd, workspaceId } });
   }
 
   attachSession(sessionId: SessionId): void {
@@ -193,8 +195,8 @@ export class ServerBridge extends EventEmitter {
     this.send({ type: 'session:detach', sessionId });
   }
 
-  listSessions(): void {
-    this.send({ type: 'session:list' });
+  listSessions(workspaceId?: WorkspaceId): void {
+    this.send({ type: 'session:list', workspaceId });
   }
 
   sendChat(sessionId: SessionId, content: string): void {
@@ -207,5 +209,44 @@ export class ServerBridge extends EventEmitter {
 
   triggerHandoff(sessionId: SessionId): void {
     this.send({ type: 'handoff:trigger', sessionId });
+  }
+
+  // ─── Workspace convenience methods ───────────────────
+
+  createWorkspace(name?: string, cwd?: string): void {
+    this.send({ type: 'workspace:create', options: { name, cwd } });
+  }
+
+  listWorkspaces(): void {
+    this.send({ type: 'workspace:list' });
+  }
+
+  deleteWorkspace(workspaceId: WorkspaceId): void {
+    this.send({ type: 'workspace:delete', workspaceId });
+  }
+
+  renameWorkspace(workspaceId: WorkspaceId, name: string): void {
+    this.send({ type: 'workspace:rename', workspaceId, name });
+  }
+
+  // ─── Terminal sync convenience methods ───────────────
+
+  sendTerminalInput(sessionId: SessionId, data: string): void {
+    this.send({
+      type: 'terminal:input',
+      input: {
+        sessionId,
+        data,
+        sourceClientId: this.clientId ?? undefined,
+        timestamp: Date.now(),
+      },
+    });
+  }
+
+  sendTerminalResize(sessionId: SessionId, cols: number, rows: number): void {
+    this.send({
+      type: 'terminal:resize',
+      resize: { sessionId, cols, rows },
+    });
   }
 }

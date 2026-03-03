@@ -38,8 +38,14 @@ export interface ToolUseMessage {
 /** Notification that appears on mobile when session needs attention */
 export interface SessionNotification {
   sessionId: SessionId;
-  type: 'context_high' | 'handoff_ready' | 'error' | 'approval_needed' | 'completed';
+  type: 'context_high' | 'handoff_ready' | 'error' | 'approval_needed' | 'completed' | 'command_complete' | 'command_failed';
   title: string;
   body: string;
   timestamp: number;
+  /** Priority level for push notification delivery */
+  priority: 'low' | 'normal' | 'high' | 'critical';
+  /** Whether this notification should be delivered as a push notification */
+  pushEnabled: boolean;
+  /** Additional data payload for the notification */
+  data?: Record<string, unknown>;
 }

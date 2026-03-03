@@ -42,6 +42,7 @@ export class SessionManager extends EventEmitter {
       contextUsage: 0,
       parentSessionId: options.fromHandoff?.parentSessionId,
       handoffContext: options.fromHandoff?.handoffContent,
+      workspaceId: options.workspaceId,
     };
 
     this.sessions.set(id, session);
@@ -54,10 +55,11 @@ export class SessionManager extends EventEmitter {
     return this.sessions.get(id);
   }
 
-  list(): SessionListItem[] {
+  list(workspaceId?: string): SessionListItem[] {
     let idx = 0;
     return Array.from(this.sessions.values())
       .filter(s => s.status !== 'archived')
+      .filter(s => !workspaceId || s.workspaceId === workspaceId)
       .sort((a, b) => a.createdAt - b.createdAt)
       .map(s => ({
         id: s.id,
@@ -68,6 +70,7 @@ export class SessionManager extends EventEmitter {
         lastActivityAt: s.lastActivityAt,
         cwd: s.cwd,
         index: idx++,
+        workspaceId: s.workspaceId,
       }));
   }
 
