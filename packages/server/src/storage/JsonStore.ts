@@ -30,6 +30,7 @@ export class JsonStore extends EventEmitter {
   private dataDir: string;
   private debounceMs: number;
   private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private pendingData = new Map<string, unknown>();
   private initialized = false;
 
   constructor(options: JsonStoreOptions = {}) {
@@ -115,9 +116,14 @@ export class JsonStore extends EventEmitter {
     const existing = this.debounceTimers.get(filename);
     if (existing) clearTimeout(existing);
 
+    // Store pending data so flush() can execute it
+    this.pendingData.set(filename, data);
+
     const timer = setTimeout(() => {
       this.debounceTimers.delete(filename);
-      this.save(filename, data).catch(err => {
+      const pendingData = this.pendingData.get(filename);
+      this.pendingData.delete(filename);
+      this.save(filename, pendingData).catch(err => {
         this.emit('store:error', { filename, error: (err as Error).message });
       });
     }, this.debounceMs);
@@ -170,23 +176,37 @@ export class JsonStore extends EventEmitter {
 
   /**
    * Flush all pending debounced saves immediately.
+   * Executes all pending saves before clearing timers.
    */
   async flush(): Promise<void> {
-    // Clear all debounce timers — saves are already scheduled
+    // Clear all debounce timers first to prevent double-writes
     for (const timer of this.debounceTimers.values()) {
       clearTimeout(timer);
     }
     this.debounceTimers.clear();
+
+    // Execute all pending saves
+    const saves: Promise<void>[] = [];
+    for (const [filename, data] of this.pendingData) {
+      saves.push(
+        this.save(filename, data).catch(err => {
+          this.emit('store:error', { filename, error: (err as Error).message });
+        }),
+      );
+    }
+    this.pendingData.clear();
+    await Promise.all(saves);
   }
 
   /**
-   * Clean up timers on shutdown.
+   * Clean up timers on shutdown. Use flush() first to persist pending data.
    */
   destroy(): void {
     for (const timer of this.debounceTimers.values()) {
       clearTimeout(timer);
     }
     this.debounceTimers.clear();
+    this.pendingData.clear();
   }
 
   /**

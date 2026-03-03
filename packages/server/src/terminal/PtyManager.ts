@@ -197,6 +197,7 @@ export class PtyManager extends EventEmitter {
   /**
    * Kill a session's PTY process gracefully.
    * Sends SIGTERM first, then SIGKILL after timeout.
+   * Disposes spawn-time handlers first to prevent double cleanup.
    */
   async kill(sessionId: SessionId): Promise<void> {
     const pty = this.ptys.get(sessionId);
@@ -204,6 +205,15 @@ export class PtyManager extends EventEmitter {
 
     const info = this.sessionInfo.get(sessionId);
     if (info) info.alive = false;
+
+    // Dispose spawn-time handlers to prevent double cleanup/event emission
+    const spawnDisposers = this.disposers.get(sessionId);
+    if (spawnDisposers) {
+      for (const d of spawnDisposers) {
+        try { d.dispose(); } catch { /* ignore */ }
+      }
+    }
+    this.disposers.delete(sessionId);
 
     return new Promise<void>((resolve) => {
       let killed = false;
@@ -216,18 +226,18 @@ export class PtyManager extends EventEmitter {
             // Already dead
           }
           killed = true;
-          this.cleanup(sessionId);
+          this.ptys.delete(sessionId);
           resolve();
         }
       }, KILL_TIMEOUT);
 
-      // Listen for natural exit
+      // Listen for exit (only kill-time handler now)
       const exitDisposer = pty.onExit(() => {
         if (!killed) {
           killed = true;
           clearTimeout(forceKillTimer);
           exitDisposer.dispose();
-          this.cleanup(sessionId);
+          this.ptys.delete(sessionId);
           resolve();
         }
       });
@@ -238,7 +248,7 @@ export class PtyManager extends EventEmitter {
         killed = true;
         clearTimeout(forceKillTimer);
         exitDisposer.dispose();
-        this.cleanup(sessionId);
+        this.ptys.delete(sessionId);
         resolve();
       }
     });

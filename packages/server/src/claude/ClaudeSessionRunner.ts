@@ -40,6 +40,8 @@ export class ClaudeSessionRunner extends EventEmitter {
   private sessions = new Map<SessionId, ClaudeSessionState>();
   private restartTimers = new Map<SessionId, ReturnType<typeof setTimeout>>();
   private taskTimers = new Map<SessionId, ReturnType<typeof setTimeout>>();
+  private promptTimers = new Map<SessionId, ReturnType<typeof setTimeout>>();
+  private taskSessionMap = new Map<SessionId, string>(); // sessionId → taskId
   private maxRestarts: number;
   private maxTaskDurationMs: number;
   private claudePath: string;
@@ -111,9 +113,17 @@ export class ClaudeSessionRunner extends EventEmitter {
 
     // If prompt provided, send it after a small delay for claude to start
     if (options.prompt) {
-      setTimeout(() => {
-        this.ptyManager.write(sessionId, options.prompt + '\n');
+      // Cancel any existing prompt timer for this session
+      this.clearPromptTimer(sessionId);
+      const timer = setTimeout(() => {
+        this.promptTimers.delete(sessionId);
+        if (this.sessions.get(sessionId)?.status === 'running') {
+          // Sanitize prompt: escape shell metacharacters when writing to PTY
+          const sanitized = options.prompt!.replace(/[`$\\]/g, '\\$&');
+          this.ptyManager.write(sessionId, sanitized + '\n');
+        }
       }, 2000);
+      this.promptTimers.set(sessionId, timer);
     }
 
     state = {
@@ -145,6 +155,7 @@ export class ClaudeSessionRunner extends EventEmitter {
     state.autoRestart = false;
     this.clearRestartTimer(sessionId);
     this.clearTaskTimer(sessionId);
+    this.clearPromptTimer(sessionId);
 
     // Send Ctrl-C then exit to claude
     if (this.ptyManager.isAlive(sessionId)) {
@@ -291,13 +302,44 @@ export class ClaudeSessionRunner extends EventEmitter {
     }
   }
 
+  private clearPromptTimer(sessionId: SessionId): void {
+    const timer = this.promptTimers.get(sessionId);
+    if (timer) {
+      clearTimeout(timer);
+      this.promptTimers.delete(sessionId);
+    }
+  }
+
+  /**
+   * Associate a task ID with a session for completion tracking.
+   */
+  setTaskForSession(sessionId: SessionId, taskId: string): void {
+    this.taskSessionMap.set(sessionId, taskId);
+  }
+
+  /**
+   * Get the task ID associated with a session.
+   */
+  getTaskForSession(sessionId: SessionId): string | undefined {
+    return this.taskSessionMap.get(sessionId);
+  }
+
+  /**
+   * Clear the task association for a session.
+   */
+  clearTaskForSession(sessionId: SessionId): void {
+    this.taskSessionMap.delete(sessionId);
+  }
+
   /**
    * Clean up all timers. Used during server shutdown.
    */
   destroy(): void {
     for (const timer of this.restartTimers.values()) clearTimeout(timer);
     for (const timer of this.taskTimers.values()) clearTimeout(timer);
+    for (const timer of this.promptTimers.values()) clearTimeout(timer);
     this.restartTimers.clear();
     this.taskTimers.clear();
+    this.promptTimers.clear();
   }
 }

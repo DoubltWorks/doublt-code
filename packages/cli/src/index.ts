@@ -195,11 +195,13 @@ program
     }
 
     // Graceful shutdown
-    process.on('SIGINT', () => {
+    const shutdown = async () => {
       bridge.disconnect();
-      server.stop();
+      await server.stop();
       process.exit(0);
-    });
+    };
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
   });
 
 program

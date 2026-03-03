@@ -146,6 +146,47 @@ describe('JsonStore', () => {
     });
   });
 
+  describe('flush', () => {
+    it('executes all pending debounced saves immediately', async () => {
+      store.scheduleSave('flush-a.json', { a: 1 });
+      store.scheduleSave('flush-b.json', { b: 2 });
+
+      // Flush immediately — should not wait for debounce
+      await store.flush();
+
+      const a = await store.load<any>('flush-a.json');
+      const b = await store.load<any>('flush-b.json');
+      expect(a).toEqual({ a: 1 });
+      expect(b).toEqual({ b: 2 });
+    });
+
+    it('uses the latest data when flushing', async () => {
+      store.scheduleSave('flush-latest.json', { v: 1 });
+      store.scheduleSave('flush-latest.json', { v: 2 });
+      store.scheduleSave('flush-latest.json', { v: 3 });
+
+      await store.flush();
+
+      const loaded = await store.load<any>('flush-latest.json');
+      expect(loaded.v).toBe(3);
+    });
+
+    it('does not double-write after flush', async () => {
+      const events: any[] = [];
+      store.on('store:saved', (e) => events.push(e));
+
+      store.scheduleSave('flush-once.json', { v: 1 });
+      await store.flush();
+
+      // Wait longer than debounce interval
+      await new Promise(resolve => setTimeout(resolve, 120));
+
+      // Should only have saved once (from flush, not from debounce timer)
+      const flushSaves = events.filter(e => e.filename === 'flush-once.json');
+      expect(flushSaves.length).toBe(1);
+    });
+  });
+
   describe('delete', () => {
     it('removes file and backup', async () => {
       await store.save('del.json', { v: 1 });

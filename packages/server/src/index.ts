@@ -345,6 +345,13 @@ export class DoubltServer {
     });
 
     this.claudeRunner.on('claude:max_restarts', ({ sessionId }) => {
+      // Mark associated task as failed
+      const taskId = this.claudeRunner.getTaskForSession(sessionId);
+      if (taskId) {
+        this.taskQueueManager.failTask(taskId, 'Max restarts exceeded');
+        this.claudeRunner.clearTaskForSession(sessionId);
+      }
+
       this.connectionManager.broadcastToSession(sessionId, {
         type: 'notification',
         notification: {
@@ -360,6 +367,13 @@ export class DoubltServer {
     });
 
     this.claudeRunner.on('claude:completed', ({ sessionId }) => {
+      // Mark associated task as completed
+      const taskId = this.claudeRunner.getTaskForSession(sessionId);
+      if (taskId) {
+        this.taskQueueManager.completeTask(taskId);
+        this.claudeRunner.clearTaskForSession(sessionId);
+      }
+
       this.connectionManager.broadcastToSession(sessionId, {
         type: 'notification',
         notification: {
@@ -895,10 +909,13 @@ export class DoubltServer {
     // Find or create a session for the task
     const sessionId = next.sessionId;
     if (sessionId && this.sessionManager.get(sessionId)) {
+      // Track task-to-session mapping for completion
+      this.claudeRunner.setTaskForSession(sessionId, next.id);
       this.claudeRunner.startClaude(sessionId, {
         prompt: `${next.title}\n\n${next.description}`,
         autoRestart: true,
       }).catch(err => {
+        this.claudeRunner.clearTaskForSession(sessionId);
         this.taskQueueManager.failTask(next.id, err.message);
       });
     } else {
@@ -908,12 +925,15 @@ export class DoubltServer {
         workspaceId: next.workspaceId,
       });
 
+      // Track task-to-session mapping for completion
+      this.claudeRunner.setTaskForSession(session.id, next.id);
       this.ptyManager.spawn(session.id).then(() => {
         return this.claudeRunner.startClaude(session.id, {
           prompt: `${next.title}\n\n${next.description}`,
           autoRestart: true,
         });
       }).catch(err => {
+        this.claudeRunner.clearTaskForSession(session.id);
         this.taskQueueManager.failTask(next.id, err.message);
       });
     }
@@ -971,11 +991,19 @@ export class DoubltServer {
     }, 30_000);
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
+    // Save all state before shutting down
+    try {
+      await this.jsonStore.flush();
+      await this.saveState();
+    } catch {
+      // Best-effort save on shutdown
+    }
+
     this.claudeRunner.destroy();
     this.taskQueueManager.destroy();
     this.jsonStore.destroy();
-    this.ptyManager.killAll().catch(() => {});
+    await this.ptyManager.killAll().catch(() => {});
     this.connectionManager.stop();
   }
 
@@ -994,10 +1022,12 @@ if (process.argv[1]?.endsWith('index.ts') || process.argv[1]?.endsWith('index.js
   const server = new DoubltServer({ port });
   server.start();
 
-  process.on('SIGINT', () => {
-    server.stop();
+  const shutdown = async () => {
+    await server.stop();
     process.exit(0);
-  });
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }
 
 export { SessionManager } from './session/SessionManager.js';
