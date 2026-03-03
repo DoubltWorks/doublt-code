@@ -19,6 +19,12 @@ import type {
   LongRunningCommand,
 } from '@doublt/shared';
 
+/** Expo Push API endpoint */
+const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
+
+/** Max push retry attempts */
+const MAX_PUSH_RETRIES = 3;
+
 interface PushRegistration {
   clientId: ClientId;
   pushToken: string;
@@ -173,6 +179,9 @@ export class NotificationManager extends EventEmitter {
           registration,
           notification,
         });
+
+        // Actually deliver via Expo Push API
+        this.sendPushNotification(registration, notification).catch(() => {});
       }
     }
   }
@@ -185,6 +194,90 @@ export class NotificationManager extends EventEmitter {
       this.emit('notification:send', item.notification);
     }
     this.pendingNotifications.delete(clientId);
+  }
+
+  /**
+   * Send an actual push notification via Expo Push API.
+   * Uses native fetch (Node 18+). Retries up to MAX_PUSH_RETRIES.
+   */
+  private async sendPushNotification(
+    registration: PushRegistration,
+    notification: SessionNotification,
+    attempt = 1,
+  ): Promise<void> {
+    const priorityMap: Record<string, 'default' | 'normal' | 'high'> = {
+      low: 'normal',
+      normal: 'default',
+      high: 'high',
+      critical: 'high',
+    };
+
+    const body = JSON.stringify({
+      to: registration.pushToken,
+      title: notification.title,
+      body: notification.body,
+      priority: priorityMap[notification.priority] ?? 'default',
+      sound: notification.priority === 'critical' ? 'default' : null,
+      badge: this.getUnreadCount(registration.clientId),
+      data: {
+        sessionId: notification.sessionId,
+        type: notification.type,
+        ...(notification.data ?? {}),
+      },
+    });
+
+    try {
+      const response = await fetch(EXPO_PUSH_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Expo Push API returned ${response.status}`);
+      }
+
+      const result = await response.json() as { data?: Array<{ status: string; message?: string }> };
+      const ticket = result.data?.[0];
+
+      if (ticket?.status === 'error') {
+        // Token might be invalid — clean up
+        if (ticket.message?.includes('DeviceNotRegistered')) {
+          this.pushRegistrations.delete(registration.clientId);
+          this.emit('push:token_expired', { clientId: registration.clientId });
+        }
+        throw new Error(ticket.message ?? 'Push failed');
+      }
+
+      this.emit('push:delivered', {
+        clientId: registration.clientId,
+        notificationType: notification.type,
+      });
+    } catch (err) {
+      if (attempt < MAX_PUSH_RETRIES) {
+        const delay = 1000 * Math.pow(2, attempt - 1);
+        setTimeout(() => {
+          this.sendPushNotification(registration, notification, attempt + 1).catch(() => {});
+        }, delay);
+      } else {
+        this.emit('push:failed', {
+          clientId: registration.clientId,
+          error: (err as Error).message,
+          attempts: attempt,
+        });
+      }
+    }
+  }
+
+  /**
+   * Get unread notification count for a client (for badge number).
+   */
+  getUnreadCount(clientId: ClientId): number {
+    const pending = this.pendingNotifications.get(clientId);
+    return pending?.length ?? 0;
   }
 
   /**

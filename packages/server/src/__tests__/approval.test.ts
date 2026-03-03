@@ -212,6 +212,18 @@ describe('ApprovalPolicyManager', () => {
       expect(manager.evaluateToolUse('read', {}, 's').action).toBe('auto_approve');
       expect(manager.evaluateToolUse('write', {}, 's').action).toBe('auto_approve');
     });
+
+    it('should apply full_auto preset (auto-approve everything)', () => {
+      const policy = manager.applyPreset('full_auto');
+      expect(policy.name).toBe('Full Auto');
+
+      expect(manager.evaluateToolUse('delete', {}, 's').action).toBe('auto_approve');
+      expect(manager.evaluateToolUse('remove', {}, 's').action).toBe('auto_approve');
+      expect(manager.evaluateToolUse('exec', {}, 's').action).toBe('auto_approve');
+      expect(manager.evaluateToolUse('shell_command', {}, 's').action).toBe('auto_approve');
+      expect(manager.evaluateToolUse('read', {}, 's').action).toBe('auto_approve');
+      expect(manager.evaluateToolUse('write', {}, 's').action).toBe('auto_approve');
+    });
   });
 
   describe('approval queue lifecycle', () => {
