@@ -42,3 +42,37 @@ declare module 'ws' {
   export { WebSocket, WebSocketServer };
   export default WebSocket;
 }
+
+declare module 'node-pty' {
+  interface IPtyForkOptions {
+    name?: string;
+    cols?: number;
+    rows?: number;
+    cwd?: string;
+    env?: Record<string, string>;
+    encoding?: string | null;
+  }
+
+  interface IDisposable {
+    dispose(): void;
+  }
+
+  interface IPty {
+    pid: number;
+    cols: number;
+    rows: number;
+    process: string;
+    handleFlowControl: boolean;
+
+    onData: (callback: (data: string) => void) => IDisposable;
+    onExit: (callback: (e: { exitCode: number; signal?: number }) => void) => IDisposable;
+    write(data: string): void;
+    resize(columns: number, rows: number): void;
+    kill(signal?: string): void;
+    pause(): void;
+    resume(): void;
+    clear(): void;
+  }
+
+  function spawn(file: string, args: string[], options: IPtyForkOptions): IPty;
+}

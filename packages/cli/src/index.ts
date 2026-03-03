@@ -150,13 +150,12 @@ program
     console.log('  Ctrl-b ?  help  |  Ctrl-b c  new session  |  Ctrl-b W  new workspace');
     console.log('  Ctrl-b m  pair  |  Ctrl-b w  list sessions |  Ctrl-b S  list workspaces');
 
-    // Handle stdin for interactive mode
+    // Handle stdin for interactive mode — true PTY passthrough
     if (process.stdin.isTTY) {
       process.stdin.setRawMode(true);
       process.stdin.resume();
 
       let prefixMode = false;
-      let inputBuffer = '';
 
       process.stdin.on('data', (data: Buffer) => {
         const key = data.toString();
@@ -173,46 +172,15 @@ program
           return;
         }
 
-        // Ctrl-c to exit
-        if (key === '\x03') {
-          server.stop();
-          process.exit(0);
+        // All other input goes directly to PTY via terminal:input
+        const pane = paneManager.activePane;
+        if (pane) {
+          bridge.sendTerminalInput(pane.sessionId, key);
         }
-
-        // Enter to send message
-        if (key === '\r' || key === '\n') {
-          if (inputBuffer.trim()) {
-            const pane = paneManager.activePane;
-            if (pane) {
-              bridge.sendChat(pane.sessionId, inputBuffer.trim());
-
-              // Also sync terminal input to mobile
-              bridge.sendTerminalInput(pane.sessionId, inputBuffer.trim() + '\n');
-            }
-            inputBuffer = '';
-            process.stdout.write('\n> ');
-          }
-          return;
-        }
-
-        // Backspace
-        if (key === '\x7f') {
-          if (inputBuffer.length > 0) {
-            inputBuffer = inputBuffer.slice(0, -1);
-            process.stdout.write('\b \b');
-          }
-          return;
-        }
-
-        // Regular character
-        inputBuffer += key;
-        process.stdout.write(key);
       });
 
-      process.stdout.write('> ');
-
       // Send terminal size on start and on resize
-      process.stdout.on('resize', () => {
+      const sendSize = () => {
         const pane = paneManager.activePane;
         if (pane) {
           bridge.sendTerminalResize(
@@ -221,7 +189,9 @@ program
             process.stdout.rows ?? 24
           );
         }
-      });
+      };
+      sendSize();
+      process.stdout.on('resize', sendSize);
     }
 
     // Graceful shutdown

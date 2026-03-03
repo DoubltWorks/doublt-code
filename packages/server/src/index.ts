@@ -40,6 +40,7 @@ import { HandoffManager } from './handoff/HandoffManager.js';
 import { AuthManager } from './api/AuthManager.js';
 import { WorkspaceManager } from './workspace/WorkspaceManager.js';
 import { TerminalSyncManager } from './terminal/TerminalSyncManager.js';
+import { PtyManager } from './terminal/PtyManager.js';
 import { NotificationManager } from './notification/NotificationManager.js';
 import { ApprovalPolicyManager } from './approval/ApprovalPolicyManager.js';
 import { TaskQueueManager } from './taskqueue/TaskQueueManager.js';
@@ -62,6 +63,7 @@ export class DoubltServer {
   readonly authManager: AuthManager;
   readonly workspaceManager: WorkspaceManager;
   readonly terminalSyncManager: TerminalSyncManager;
+  readonly ptyManager: PtyManager;
   readonly notificationManager: NotificationManager;
   readonly approvalManager: ApprovalPolicyManager;
   readonly taskQueueManager: TaskQueueManager;
@@ -83,6 +85,7 @@ export class DoubltServer {
     this.authManager = new AuthManager();
     this.workspaceManager = new WorkspaceManager(this.sessionManager);
     this.terminalSyncManager = new TerminalSyncManager();
+    this.ptyManager = new PtyManager(this.terminalSyncManager);
     this.notificationManager = new NotificationManager();
     this.approvalManager = new ApprovalPolicyManager();
     this.taskQueueManager = new TaskQueueManager();
@@ -312,6 +315,24 @@ export class DoubltServer {
     this.searchManager.on('search:indexed', () => {
       // Indexing events are internal, no broadcast needed
     });
+
+    // ─── PTY Events ────────────────────────────────────
+
+    this.ptyManager.on('pty:exited', ({ sessionId, exitCode, signal }) => {
+      this.connectionManager.broadcastToSession(sessionId, {
+        type: 'notification',
+        notification: {
+          sessionId,
+          type: exitCode === 0 ? 'completed' : 'error',
+          title: 'Terminal process exited',
+          body: `Shell exited with code ${exitCode}${signal ? ` (signal ${signal})` : ''}`,
+          timestamp: Date.now(),
+          priority: exitCode === 0 ? 'low' : 'high',
+          pushEnabled: exitCode !== 0,
+        },
+      });
+      this.digestManager.logEvent('command', sessionId, `PTY exited (code ${exitCode})`);
+    });
   }
 
   private handleClientMessage(clientId: string, msg: ClientMessage): void {
@@ -340,6 +361,22 @@ export class DoubltServer {
             index: 0,
             workspaceId: session.workspaceId,
           },
+        });
+
+        // Spawn PTY for the session
+        this.ptyManager.spawn(session.id, { cwd: session.cwd }).catch(err => {
+          this.connectionManager.sendToClient(clientId, {
+            type: 'notification',
+            notification: {
+              sessionId: session.id,
+              type: 'error',
+              title: 'PTY spawn failed',
+              body: err.message,
+              timestamp: Date.now(),
+              priority: 'high',
+              pushEnabled: true,
+            },
+          });
         });
 
         // Index session for search
@@ -462,11 +499,19 @@ export class DoubltServer {
       // ─── Terminal sync messages ──────────────────────
 
       case 'terminal:input': {
+        // Route input to PTY if available, otherwise just relay
+        if (this.ptyManager.isAlive(msg.input.sessionId)) {
+          this.ptyManager.write(msg.input.sessionId, msg.input.data);
+        }
         this.terminalSyncManager.handleInput(msg.input);
         break;
       }
 
       case 'terminal:resize': {
+        // Resize PTY if available
+        if (this.ptyManager.isAlive(msg.resize.sessionId)) {
+          this.ptyManager.resize(msg.resize.sessionId, msg.resize.cols, msg.resize.rows);
+        }
         this.terminalSyncManager.handleResize(msg.resize);
         break;
       }
@@ -712,6 +757,7 @@ export class DoubltServer {
   }
 
   stop(): void {
+    this.ptyManager.killAll().catch(() => {});
     this.connectionManager.stop();
   }
 
@@ -742,6 +788,7 @@ export { HandoffManager } from './handoff/HandoffManager.js';
 export { AuthManager } from './api/AuthManager.js';
 export { WorkspaceManager } from './workspace/WorkspaceManager.js';
 export { TerminalSyncManager } from './terminal/TerminalSyncManager.js';
+export { PtyManager } from './terminal/PtyManager.js';
 export { NotificationManager } from './notification/NotificationManager.js';
 export { ApprovalPolicyManager } from './approval/ApprovalPolicyManager.js';
 export { TaskQueueManager } from './taskqueue/TaskQueueManager.js';
