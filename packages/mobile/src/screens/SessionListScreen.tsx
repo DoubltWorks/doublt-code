@@ -19,7 +19,8 @@ import {
   TouchableOpacity,
   StyleSheet,
 } from 'react-native';
-import type { SessionListItem, SessionId, WorkspaceListItem } from '@doublt/shared';
+import type { SessionListItem, SessionId, WorkspaceListItem, GitStatus } from '@doublt/shared';
+import { GitStatusBadge } from '../components/GitStatusBadge';
 
 interface Props {
   sessions: SessionListItem[];
@@ -31,6 +32,8 @@ interface Props {
   onCreateSession: () => void;
   onBack: () => void;
   connectionState: string;
+  gitStatus?: Map<SessionId, GitStatus>;
+  onOpenGitStatus?: (id: SessionId) => void;
 }
 
 function ContextBar({ usage }: { usage: number }) {
@@ -89,6 +92,7 @@ function SessionItem({
         </View>
       </View>
       <ContextBar usage={session.contextUsage} />
+      <GitStatusBadge gitStatus={null} />
       <Text style={styles.sessionCwd}>{session.cwd}</Text>
       <Text style={styles.lastActivity}>
         {formatTimeAgo(session.lastActivityAt)}
@@ -107,6 +111,8 @@ export function SessionListScreen({
   onCreateSession,
   onBack,
   connectionState,
+  gitStatus,
+  onOpenGitStatus,
 }: Props) {
   return (
     <View style={styles.container}>

@@ -29,6 +29,7 @@ interface Props {
   connectionState: string;
   unreadNotificationCount: number;
   onOpenNotifications: () => void;
+  onOpenSearch?: () => void;
 }
 
 function WorkspaceItem({
@@ -84,6 +85,7 @@ export function WorkspaceListScreen({
   connectionState,
   unreadNotificationCount,
   onOpenNotifications,
+  onOpenSearch,
 }: Props) {
   return (
     <View style={styles.container}>
@@ -93,6 +95,11 @@ export function WorkspaceListScreen({
           <Text style={styles.subtitle}>Workspaces</Text>
         </View>
         <View style={styles.headerRight}>
+          {onOpenSearch && (
+            <TouchableOpacity style={styles.notificationButton} onPress={onOpenSearch}>
+              <Text style={styles.notificationIcon}>search</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity style={styles.notificationButton} onPress={onOpenNotifications}>
             <Text style={styles.notificationIcon}>bell</Text>
             {unreadNotificationCount > 0 && (

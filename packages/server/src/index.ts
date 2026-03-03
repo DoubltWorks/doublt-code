@@ -15,11 +15,15 @@
  * │  │ (workspaces) │ │ (I/O sync)   │ │ (push/in-app)  │            │
  * │  └──────┬───────┘ └──────┬───────┘ └──────┬─────────┘            │
  * │         │                │                │                       │
- * │         └────────┬───────┘────────────────┘                       │
- * │                  │                                                │
- * │           ┌──────┴───────┐                                        │
- * │           │  Orchestrator │                                        │
- * │           └──────────────┘                                        │
+ * │  ┌──────┴───────┐ ┌─────┴────────┐ ┌─────┴──────────┐            │
+ * │  │ ApprovalMgr  │ │ TaskQueueMgr │ │ DigestMgr      │            │
+ * │  │ (policies)   │ │ (task queue) │ │ (activity log) │            │
+ * │  └──────┬───────┘ └──────┬───────┘ └──────┬─────────┘            │
+ * │         │                │                │                       │
+ * │  ┌──────┴───────┐ ┌─────┴────────┐ ┌─────┴──────────┐            │
+ * │  │ GitMgr       │ │ CostTracker  │ │ SearchMgr      │            │
+ * │  │ (git status) │ │ (cost/usage) │ │ (search/tmpl)  │            │
+ * │  └──────────────┘ └──────────────┘ └────────────────┘            │
  * │                                                                   │
  * └────────┬──────────────┬───────────────────────────────────────────┘
  *          │              │
@@ -37,7 +41,13 @@ import { AuthManager } from './api/AuthManager.js';
 import { WorkspaceManager } from './workspace/WorkspaceManager.js';
 import { TerminalSyncManager } from './terminal/TerminalSyncManager.js';
 import { NotificationManager } from './notification/NotificationManager.js';
-import type { ClientMessage, ServerMessage } from '@doublt/shared';
+import { ApprovalPolicyManager } from './approval/ApprovalPolicyManager.js';
+import { TaskQueueManager } from './taskqueue/TaskQueueManager.js';
+import { DigestManager } from './digest/DigestManager.js';
+import { GitManager } from './git/GitManager.js';
+import { CostTracker } from './cost/CostTracker.js';
+import { SearchManager } from './search/SearchManager.js';
+import type { ClientMessage, ServerMessage, GitStatus, GitCommit, GitDiff } from '@doublt/shared';
 
 export interface DoubltServerOptions {
   port?: number;
@@ -53,6 +63,12 @@ export class DoubltServer {
   readonly workspaceManager: WorkspaceManager;
   readonly terminalSyncManager: TerminalSyncManager;
   readonly notificationManager: NotificationManager;
+  readonly approvalManager: ApprovalPolicyManager;
+  readonly taskQueueManager: TaskQueueManager;
+  readonly digestManager: DigestManager;
+  readonly gitManager: GitManager;
+  readonly costTracker: CostTracker;
+  readonly searchManager: SearchManager;
 
   private port: number;
   private host: string;
@@ -68,6 +84,12 @@ export class DoubltServer {
     this.workspaceManager = new WorkspaceManager(this.sessionManager);
     this.terminalSyncManager = new TerminalSyncManager();
     this.notificationManager = new NotificationManager();
+    this.approvalManager = new ApprovalPolicyManager();
+    this.taskQueueManager = new TaskQueueManager();
+    this.digestManager = new DigestManager();
+    this.gitManager = new GitManager();
+    this.costTracker = new CostTracker();
+    this.searchManager = new SearchManager();
 
     this.wireUpEvents();
   }
@@ -149,6 +171,7 @@ export class DoubltServer {
         handoffSummary: result.summary,
       });
       this.notificationManager.notifyHandoffReady(result.parentSessionId, result.newSessionId);
+      this.digestManager.logEvent('handoff', result.parentSessionId, `Handoff to ${result.newSessionId}`);
     });
 
     // ─── Context High → Notify ────────────────────────
@@ -193,6 +216,7 @@ export class DoubltServer {
         type: 'command:status',
         command,
       });
+      this.digestManager.logEvent('command', command.sessionId, `Command: ${command.command} (${command.status})`);
     });
 
     this.terminalSyncManager.on('command:completed_notification', (command) => {
@@ -206,6 +230,87 @@ export class DoubltServer {
         type: 'notification',
         notification,
       });
+    });
+
+    // ─── Approval Policy Events ───────────────────────
+
+    this.approvalManager.on('approval:needed', (item) => {
+      this.connectionManager.broadcastToAll({
+        type: 'approval:needed',
+        item,
+      });
+      this.digestManager.logEvent('tool_use', item.sessionId, `Approval needed: ${item.toolName}`);
+    });
+
+    this.approvalManager.on('approval:decided', (decision) => {
+      this.connectionManager.broadcastToAll({
+        type: 'approval:decided',
+        decision,
+      });
+    });
+
+    // ─── Task Queue Events ────────────────────────────
+
+    this.taskQueueManager.on('task:created', (task) => {
+      this.connectionManager.broadcastToAll({ type: 'task:created', task });
+      this.digestManager.logEvent('command', task.sessionId ?? '', `Task created: ${task.title}`);
+    });
+
+    this.taskQueueManager.on('task:started', (task) => {
+      this.connectionManager.broadcastToAll({ type: 'task:updated', task });
+    });
+
+    this.taskQueueManager.on('task:completed', (task) => {
+      this.connectionManager.broadcastToAll({ type: 'task:updated', task });
+      this.digestManager.logEvent('command', task.sessionId ?? '', `Task completed: ${task.title}`);
+    });
+
+    this.taskQueueManager.on('task:failed', (task) => {
+      this.connectionManager.broadcastToAll({ type: 'task:updated', task });
+      this.digestManager.logEvent('error', task.sessionId ?? '', `Task failed: ${task.title}`);
+    });
+
+    this.taskQueueManager.on('task:cancelled', (task) => {
+      this.connectionManager.broadcastToAll({ type: 'task:updated', task });
+    });
+
+    // ─── Git Status Events ────────────────────────────
+
+    this.gitManager.on('git:status_changed', ({ sessionId, status }: { sessionId: string; status: GitStatus }) => {
+      this.connectionManager.broadcastToAll({
+        type: 'git:status:result',
+        sessionId,
+        status,
+      });
+    });
+
+    this.gitManager.on('git:new_commit', ({ sessionId, commit }: { sessionId: string; commit: GitCommit }) => {
+      this.digestManager.logEvent('commit', sessionId, `New commit: ${commit.message}`);
+    });
+
+    // ─── Cost Tracking Events ─────────────────────────
+
+    this.costTracker.on('cost:updated', (estimate) => {
+      this.connectionManager.broadcastToAll({
+        type: 'cost:update',
+        sessionId: estimate.sessionId,
+        usage: estimate.usage,
+        estimatedCostUsd: estimate.estimatedCostUsd,
+      });
+    });
+
+    this.costTracker.on('budget:alert', (alert) => {
+      this.connectionManager.broadcastToAll({ type: 'budget:alert', alert });
+    });
+
+    this.costTracker.on('budget:exceeded', (alert) => {
+      this.connectionManager.broadcastToAll({ type: 'budget:alert', alert });
+    });
+
+    // ─── Search Events ────────────────────────────────
+
+    this.searchManager.on('search:indexed', () => {
+      // Indexing events are internal, no broadcast needed
     });
   }
 
@@ -236,6 +341,10 @@ export class DoubltServer {
             workspaceId: session.workspaceId,
           },
         });
+
+        // Index session for search
+        this.searchManager.indexSession(session.id, session.name, session.cwd);
+        this.digestManager.logEvent('message', session.id, `Session created: ${session.name}`);
         break;
       }
 
@@ -270,17 +379,21 @@ export class DoubltServer {
 
       case 'chat:send': {
         this.sessionManager.updateActivity(msg.sessionId);
+        const chatMsg = {
+          id: `msg-${Date.now()}`,
+          sessionId: msg.sessionId,
+          role: 'user' as const,
+          content: msg.content,
+          timestamp: Date.now(),
+          sourceClient: { id: clientId, type: clientType ?? 'cli' as const },
+        };
         this.connectionManager.broadcastToSession(msg.sessionId, {
           type: 'chat:message',
-          message: {
-            id: `msg-${Date.now()}`,
-            sessionId: msg.sessionId,
-            role: 'user',
-            content: msg.content,
-            timestamp: Date.now(),
-            sourceClient: { id: clientId, type: clientType ?? 'cli' },
-          },
+          message: chatMsg,
         });
+        // Index message for search
+        this.searchManager.indexMessage(msg.sessionId, chatMsg.id, msg.content, chatMsg.timestamp);
+        this.digestManager.logEvent('message', msg.sessionId, `Message from ${clientType ?? 'cli'}`);
         break;
       }
 
@@ -319,11 +432,11 @@ export class DoubltServer {
           type: 'workspace:created',
           workspace: this.workspaceManager.toListItem(workspace),
         });
-        // Also broadcast to all clients
         this.connectionManager.broadcastToAll({
           type: 'workspace:created',
           workspace: this.workspaceManager.toListItem(workspace),
         });
+        this.searchManager.indexWorkspace(workspace.id, workspace.name, workspace.cwd);
         break;
       }
 
@@ -369,6 +482,204 @@ export class DoubltServer {
         this.notificationManager.unregisterPushToken(clientId);
         break;
       }
+
+      // ─── Approval policy messages ────────────────────
+
+      case 'policy:set': {
+        if (msg.preset) {
+          const policy = this.approvalManager.applyPreset(msg.preset);
+          this.connectionManager.sendToClient(clientId, { type: 'policy:result', policy });
+        } else if (msg.policy) {
+          const existing = this.approvalManager.updatePolicy(msg.policy.id, msg.policy);
+          if (!existing) {
+            const created = this.approvalManager.createPolicy(msg.policy.name, msg.policy.description, msg.policy.rules);
+            this.connectionManager.sendToClient(clientId, { type: 'policy:result', policy: created });
+          } else {
+            this.connectionManager.sendToClient(clientId, { type: 'policy:result', policy: existing });
+          }
+        }
+        break;
+      }
+
+      case 'policy:get': {
+        const activePolicy = this.approvalManager.getActivePolicy();
+        this.connectionManager.sendToClient(clientId, { type: 'policy:result', policy: activePolicy });
+        break;
+      }
+
+      case 'policy:list': {
+        const policies = this.approvalManager.listPolicies();
+        this.connectionManager.sendToClient(clientId, { type: 'policy:list:result', policies });
+        break;
+      }
+
+      case 'approval:queue:list': {
+        const queue = this.approvalManager.listPendingApprovals();
+        this.connectionManager.sendToClient(clientId, { type: 'approval:queue:result', queue });
+        break;
+      }
+
+      case 'approval:decide': {
+        const decision = this.approvalManager.decideApproval(msg.queueItemId, msg.approved, clientId, msg.reason);
+        if (decision) {
+          this.connectionManager.broadcastToAll({ type: 'approval:decided', decision });
+        }
+        break;
+      }
+
+      // ─── Task queue messages ─────────────────────────
+
+      case 'task:create': {
+        const task = this.taskQueueManager.createTask(msg.title, msg.description, msg.priority, msg.workspaceId, msg.sessionId);
+        this.connectionManager.sendToClient(clientId, { type: 'task:created', task });
+        break;
+      }
+
+      case 'task:update': {
+        const updated = this.taskQueueManager.updateTask(msg.taskId, msg.updates);
+        if (updated) {
+          this.connectionManager.broadcastToAll({ type: 'task:updated', task: updated });
+        }
+        break;
+      }
+
+      case 'task:delete': {
+        const deleted = this.taskQueueManager.deleteTask(msg.taskId);
+        if (deleted) {
+          this.connectionManager.broadcastToAll({ type: 'task:deleted', taskId: msg.taskId });
+        }
+        break;
+      }
+
+      case 'task:reorder': {
+        this.taskQueueManager.reorderTasks(msg.taskIds);
+        const tasks = this.taskQueueManager.listTasks();
+        this.connectionManager.sendToClient(clientId, { type: 'task:list:result', tasks });
+        break;
+      }
+
+      case 'task:list': {
+        const tasks = this.taskQueueManager.listTasks(msg.workspaceId);
+        this.connectionManager.sendToClient(clientId, { type: 'task:list:result', tasks });
+        break;
+      }
+
+      // ─── Digest & timeline messages ──────────────────
+
+      case 'digest:request': {
+        const digest = this.digestManager.generateDigest(msg.since);
+        this.connectionManager.sendToClient(clientId, { type: 'digest:result', digest });
+        break;
+      }
+
+      case 'timeline:request': {
+        const entries = this.digestManager.getTimeline(msg.sessionId, {
+          limit: msg.limit,
+          offset: msg.offset,
+        });
+        this.connectionManager.sendToClient(clientId, { type: 'timeline:result', entries });
+        break;
+      }
+
+      case 'history:request': {
+        const page = this.digestManager.getHistory(msg.sessionId, msg.cursor, msg.limit);
+        this.connectionManager.sendToClient(clientId, { type: 'history:result', page });
+        break;
+      }
+
+      // ─── Git status messages ─────────────────────────
+
+      case 'git:status:request': {
+        const session = this.sessionManager.get(msg.sessionId);
+        if (session) {
+          this.gitManager.getStatus(session.cwd).then((status: GitStatus) => {
+            this.connectionManager.sendToClient(clientId, {
+              type: 'git:status:result',
+              sessionId: msg.sessionId,
+              status,
+            });
+          }).catch(() => {
+            // Not a git repo or error — send empty status
+          });
+        }
+        break;
+      }
+
+      case 'git:log:request': {
+        const session2 = this.sessionManager.get(msg.sessionId);
+        if (session2) {
+          this.gitManager.getLog(session2.cwd, msg.count).then((commits: GitCommit[]) => {
+            this.connectionManager.sendToClient(clientId, {
+              type: 'git:log:result',
+              sessionId: msg.sessionId,
+              commits,
+            });
+          }).catch(() => {});
+        }
+        break;
+      }
+
+      case 'git:diff:request': {
+        const session3 = this.sessionManager.get(msg.sessionId);
+        if (session3) {
+          this.gitManager.getDiff(session3.cwd, msg.filePath, msg.staged).then((diffs: GitDiff[]) => {
+            this.connectionManager.sendToClient(clientId, {
+              type: 'git:diff:result',
+              sessionId: msg.sessionId,
+              diffs,
+            });
+          }).catch(() => {});
+        }
+        break;
+      }
+
+      // ─── Cost & usage messages ───────────────────────
+
+      case 'usage:request': {
+        let summary;
+        if (msg.period === 'weekly') {
+          summary = this.costTracker.getWeeklySummary();
+        } else if (msg.period === 'monthly') {
+          summary = this.costTracker.getMonthlySummary();
+        } else {
+          summary = this.costTracker.getDailySummary();
+        }
+        this.connectionManager.sendToClient(clientId, { type: 'usage:result', summary });
+        break;
+      }
+
+      case 'budget:set': {
+        this.costTracker.setBudget(msg.config);
+        break;
+      }
+
+      // ─── Search & template messages ──────────────────
+
+      case 'search:query': {
+        const results = this.searchManager.search(msg.query);
+        this.connectionManager.sendToClient(clientId, { type: 'search:result', results });
+        break;
+      }
+
+      case 'template:list': {
+        const templates = this.searchManager.listTemplates(msg.category);
+        this.connectionManager.sendToClient(clientId, { type: 'template:list:result', templates });
+        break;
+      }
+
+      case 'template:create': {
+        const template = this.searchManager.createTemplate(msg.name, msg.description, msg.category as any, msg.prompts, msg.tags ?? []);
+        this.connectionManager.sendToClient(clientId, { type: 'template:created', template });
+        break;
+      }
+
+      case 'template:use': {
+        const used = this.searchManager.useTemplate(msg.templateId);
+        if (used) {
+          this.connectionManager.sendToClient(clientId, { type: 'template:used', template: used });
+        }
+        break;
+      }
     }
   }
 
@@ -387,11 +698,16 @@ export class DoubltServer {
     });
     this.workspaceManager.addSession(defaultWorkspace.id, defaultSession.id);
 
+    // Index defaults for search
+    this.searchManager.indexWorkspace(defaultWorkspace.id, defaultWorkspace.name, defaultWorkspace.cwd);
+    this.searchManager.indexSession(defaultSession.id, defaultSession.name, defaultSession.cwd);
+
     // Periodic cleanup
     setInterval(() => {
       this.sessionManager.pruneStaleClients();
       this.authManager.cleanup();
       this.notificationManager.cleanup();
+      this.digestManager.clearOldEvents(Date.now() - 7 * 24 * 60 * 60 * 1000);
     }, 30_000);
   }
 
@@ -427,3 +743,9 @@ export { AuthManager } from './api/AuthManager.js';
 export { WorkspaceManager } from './workspace/WorkspaceManager.js';
 export { TerminalSyncManager } from './terminal/TerminalSyncManager.js';
 export { NotificationManager } from './notification/NotificationManager.js';
+export { ApprovalPolicyManager } from './approval/ApprovalPolicyManager.js';
+export { TaskQueueManager } from './taskqueue/TaskQueueManager.js';
+export { DigestManager } from './digest/DigestManager.js';
+export { GitManager } from './git/GitManager.js';
+export { CostTracker } from './cost/CostTracker.js';
+export { SearchManager } from './search/SearchManager.js';

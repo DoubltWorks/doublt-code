@@ -350,6 +350,19 @@ function handleDoubltmuxCommand(
       process.exit(0);
       break;
 
+    case 'a': // Toggle approval policy
+      console.log('\nApproval policy presets:');
+      console.log('  1: Conservative (read-only auto-approve)');
+      console.log('  2: Moderate (read + build auto-approve)');
+      console.log('  3: Permissive (most auto-approve)');
+      console.log('Apply preset via mobile app or server API.');
+      break;
+
+    case 't': // Task queue
+      console.log('\nTask Queue — manage via mobile app.');
+      console.log('  Use mobile app to create, reorder, and monitor tasks.');
+      break;
+
     case '?': // Help
       console.log('\ndoubltmux keybindings:');
       console.log('  Ctrl-b c  Create new session (in current workspace)');
@@ -360,6 +373,8 @@ function handleDoubltmuxCommand(
       console.log('  Ctrl-b w  List sessions');
       console.log('  Ctrl-b m  Mobile pairing');
       console.log('  Ctrl-b h  Handoff session');
+      console.log('  Ctrl-b a  Approval policy');
+      console.log('  Ctrl-b t  Task queue');
       console.log('  Ctrl-b x  Close pane');
       console.log('  Ctrl-b d  Detach');
       console.log('  Ctrl-b 0-9  Switch to pane by index');

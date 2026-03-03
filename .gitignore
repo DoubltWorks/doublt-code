@@ -4,3 +4,5 @@ dist/
 *.tsbuildinfo
 .expo/
 HANDOFF.md
+coverage/
+.omc/

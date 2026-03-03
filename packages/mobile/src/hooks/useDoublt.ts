@@ -7,6 +7,13 @@
  * - Terminal output sync
  * - Notification handling
  * - Background task integration
+ * - Approval policy & queue
+ * - Task queue
+ * - Catch-up digest & timeline
+ * - Git status
+ * - Cost & usage tracking
+ * - Search & templates
+ * - Command macros
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -22,6 +29,20 @@ import type {
   WorkspaceId,
   TerminalOutput,
   LongRunningCommand,
+  ApprovalPolicy,
+  ApprovalQueueItem,
+  ApprovalPreset,
+  Task,
+  TaskPriority,
+  DigestSummary,
+  TimelineEntry,
+  GitStatus,
+  GitCommit,
+  UsageSummary,
+  BudgetConfig,
+  SearchResult,
+  SessionTemplate,
+  CommandMacro,
 } from '@doublt/shared';
 
 interface DoubltState {
@@ -36,6 +57,27 @@ interface DoubltState {
   notifications: InAppNotification[];
   unreadNotificationCount: number;
   runningCommands: LongRunningCommand[];
+  // Approval policy
+  approvalQueue: ApprovalQueueItem[];
+  activePolicy: ApprovalPolicy | null;
+  policies: ApprovalPolicy[];
+  // Task queue
+  tasks: Task[];
+  // Digest & timeline
+  digest: DigestSummary | null;
+  timeline: TimelineEntry[];
+  // Git status
+  gitStatus: Map<SessionId, GitStatus>;
+  gitLog: GitCommit[];
+  // Cost & usage
+  sessionCosts: Map<SessionId, number>;
+  usageSummary: UsageSummary | null;
+  budgetConfig: BudgetConfig | null;
+  // Search & templates
+  searchResults: SearchResult[];
+  templates: SessionTemplate[];
+  // Macros
+  macros: CommandMacro[];
 }
 
 export function useDoublt() {
@@ -55,6 +97,20 @@ export function useDoublt() {
     notifications: [],
     unreadNotificationCount: 0,
     runningCommands: [],
+    approvalQueue: [],
+    activePolicy: null,
+    policies: [],
+    tasks: [],
+    digest: null,
+    timeline: [],
+    gitStatus: new Map(),
+    gitLog: [],
+    sessionCosts: new Map(),
+    usageSummary: null,
+    budgetConfig: null,
+    searchResults: [],
+    templates: [],
+    macros: [],
   });
 
   useEffect(() => {
@@ -204,6 +260,114 @@ export function useDoublt() {
       setState(prev => ({ ...prev, activeSessionId: newSessionId }));
     });
 
+    // ─── Approval policy events ───────────────────────
+
+    client.on('policyResult', (policy: ApprovalPolicy | null) => {
+      setState(prev => ({ ...prev, activePolicy: policy }));
+    });
+
+    client.on('policiesUpdated', (policies: ApprovalPolicy[]) => {
+      setState(prev => ({ ...prev, policies }));
+    });
+
+    client.on('approvalQueueUpdated', (queue: ApprovalQueueItem[]) => {
+      setState(prev => ({ ...prev, approvalQueue: queue }));
+    });
+
+    client.on('approvalNeeded', (item: ApprovalQueueItem) => {
+      setState(prev => ({
+        ...prev,
+        approvalQueue: [...prev.approvalQueue, item],
+      }));
+    });
+
+    client.on('approvalDecided', () => {
+      // Refresh the queue
+      client.listApprovalQueue();
+    });
+
+    // ─── Task queue events ────────────────────────────
+
+    client.on('taskCreated', (task: Task) => {
+      setState(prev => ({ ...prev, tasks: [...prev.tasks, task] }));
+    });
+
+    client.on('taskUpdated', (task: Task) => {
+      setState(prev => ({
+        ...prev,
+        tasks: prev.tasks.map(t => t.id === task.id ? task : t),
+      }));
+    });
+
+    client.on('taskDeleted', (taskId: string) => {
+      setState(prev => ({
+        ...prev,
+        tasks: prev.tasks.filter(t => t.id !== taskId),
+      }));
+    });
+
+    client.on('tasksUpdated', (tasks: Task[]) => {
+      setState(prev => ({ ...prev, tasks }));
+    });
+
+    // ─── Digest & timeline events ─────────────────────
+
+    client.on('digestResult', (digest: DigestSummary) => {
+      setState(prev => ({ ...prev, digest }));
+    });
+
+    client.on('timelineResult', (entries: TimelineEntry[]) => {
+      setState(prev => ({ ...prev, timeline: entries }));
+    });
+
+    // ─── Git status events ────────────────────────────
+
+    client.on('gitStatusResult', ({ sessionId, status }: { sessionId: string; status: GitStatus }) => {
+      setState(prev => {
+        const gitStatus = new Map(prev.gitStatus);
+        gitStatus.set(sessionId, status);
+        return { ...prev, gitStatus };
+      });
+    });
+
+    client.on('gitLogResult', ({ commits }: { commits: GitCommit[] }) => {
+      setState(prev => ({ ...prev, gitLog: commits }));
+    });
+
+    // ─── Cost & usage events ──────────────────────────
+
+    client.on('costUpdate', ({ sessionId, estimatedCostUsd }: { sessionId: string; estimatedCostUsd: number }) => {
+      setState(prev => {
+        const sessionCosts = new Map(prev.sessionCosts);
+        const existing = sessionCosts.get(sessionId) ?? 0;
+        sessionCosts.set(sessionId, existing + estimatedCostUsd);
+        return { ...prev, sessionCosts };
+      });
+    });
+
+    client.on('usageResult', (summary: UsageSummary) => {
+      setState(prev => ({ ...prev, usageSummary: summary }));
+    });
+
+    client.on('budgetAlert', () => {
+      // Refresh usage on budget alert
+      client.requestUsage();
+    });
+
+    // ─── Search & template events ─────────────────────
+
+    client.on('searchResults', (results: SearchResult[]) => {
+      setState(prev => ({ ...prev, searchResults: results }));
+    });
+
+    client.on('templatesUpdated', (templates: SessionTemplate[]) => {
+      setState(prev => ({ ...prev, templates }));
+    });
+
+    client.on('templateCreated', (template: SessionTemplate) => {
+      setState(prev => ({ ...prev, templates: [...prev.templates, template] }));
+    });
+
     return () => {
       backgroundService.destroy();
       client.disconnect();
@@ -291,6 +455,126 @@ export function useDoublt() {
     }));
   }, []);
 
+  // ─── Approval Policy Actions ────────────────────────
+
+  const setApprovalPreset = useCallback((preset: ApprovalPreset) => {
+    clientRef.current?.setPolicy(preset);
+  }, []);
+
+  const listApprovalQueue = useCallback(() => {
+    clientRef.current?.listApprovalQueue();
+  }, []);
+
+  const decideApproval = useCallback((queueItemId: string, approved: boolean) => {
+    clientRef.current?.decideApproval(queueItemId, approved);
+  }, []);
+
+  const decideAllApprovals = useCallback((approved: boolean) => {
+    for (const item of state.approvalQueue) {
+      clientRef.current?.decideApproval(item.id, approved);
+    }
+  }, [state.approvalQueue]);
+
+  // ─── Task Queue Actions ─────────────────────────────
+
+  const createTask = useCallback((title: string, description: string, priority: TaskPriority) => {
+    clientRef.current?.createTask(title, description, priority, state.activeWorkspaceId ?? undefined);
+  }, [state.activeWorkspaceId]);
+
+  const cancelTask = useCallback((taskId: string) => {
+    clientRef.current?.updateTask(taskId, { status: 'cancelled' });
+  }, []);
+
+  const deleteTask = useCallback((taskId: string) => {
+    clientRef.current?.deleteTask(taskId);
+  }, []);
+
+  const reorderTasks = useCallback((taskIds: string[]) => {
+    clientRef.current?.reorderTasks(taskIds);
+  }, []);
+
+  // ─── Digest & Timeline Actions ──────────────────────
+
+  const requestDigest = useCallback((since: number) => {
+    clientRef.current?.requestDigest(since);
+  }, []);
+
+  const requestTimeline = useCallback((sessionId?: string) => {
+    clientRef.current?.requestTimeline(sessionId);
+  }, []);
+
+  // ─── Git Status Actions ─────────────────────────────
+
+  const requestGitStatus = useCallback((sessionId?: SessionId) => {
+    const sid = sessionId ?? state.activeSessionId;
+    if (sid) clientRef.current?.requestGitStatus(sid);
+  }, [state.activeSessionId]);
+
+  const requestGitLog = useCallback((sessionId?: SessionId) => {
+    const sid = sessionId ?? state.activeSessionId;
+    if (sid) clientRef.current?.requestGitLog(sid);
+  }, [state.activeSessionId]);
+
+  // ─── Cost & Usage Actions ───────────────────────────
+
+  const requestUsage = useCallback((period?: 'daily' | 'weekly' | 'monthly') => {
+    clientRef.current?.requestUsage(period);
+  }, []);
+
+  const setBudget = useCallback((dailyLimit: number) => {
+    clientRef.current?.setBudget({ dailyLimitUsd: dailyLimit });
+  }, []);
+
+  // ─── Search & Template Actions ──────────────────────
+
+  const searchQuery = useCallback((query: string) => {
+    clientRef.current?.search({ query, scope: 'all' });
+  }, []);
+
+  const loadTemplates = useCallback((category?: string) => {
+    clientRef.current?.listTemplates(category);
+  }, []);
+
+  const useTemplate = useCallback((templateId: string) => {
+    clientRef.current?.useTemplate(templateId);
+  }, []);
+
+  const createTemplate = useCallback((name: string, description: string, category: string, prompts: string[]) => {
+    clientRef.current?.createTemplate(name, description, category, prompts);
+  }, []);
+
+  // ─── Macro Actions ──────────────────────────────────
+
+  const saveMacro = useCallback((name: string, command: string, description: string, category: string) => {
+    const macro: CommandMacro = {
+      id: `macro-${Date.now()}`,
+      name,
+      command,
+      description,
+      category,
+      usageCount: 0,
+      createdAt: Date.now(),
+    };
+    setState(prev => ({ ...prev, macros: [...prev.macros, macro] }));
+  }, []);
+
+  const deleteMacro = useCallback((macroId: string) => {
+    setState(prev => ({
+      ...prev,
+      macros: prev.macros.filter(m => m.id !== macroId),
+    }));
+  }, []);
+
+  // ─── Computed values ────────────────────────────────
+
+  const activeSessionCost = state.activeSessionId
+    ? (state.sessionCosts.get(state.activeSessionId) ?? 0)
+    : 0;
+
+  const activeGitStatus = state.activeSessionId
+    ? (state.gitStatus.get(state.activeSessionId) ?? null)
+    : null;
+
   return {
     ...state,
     activeMessages: state.activeSessionId
@@ -302,6 +586,8 @@ export function useDoublt() {
     workspaceSessions: state.activeWorkspaceId
       ? state.sessions.filter(s => s.workspaceId === state.activeWorkspaceId)
       : state.sessions,
+    activeSessionCost,
+    activeGitStatus,
     connect,
     connectWithPairing,
     disconnect,
@@ -315,5 +601,32 @@ export function useDoublt() {
     sendTerminalInput,
     markNotificationRead,
     markAllNotificationsRead,
+    // Approval
+    setApprovalPreset,
+    listApprovalQueue,
+    decideApproval,
+    decideAllApprovals,
+    // Tasks
+    createTask,
+    cancelTask,
+    deleteTask,
+    reorderTasks,
+    // Digest
+    requestDigest,
+    requestTimeline,
+    // Git
+    requestGitStatus,
+    requestGitLog,
+    // Cost
+    requestUsage,
+    setBudget,
+    // Search
+    searchQuery,
+    loadTemplates,
+    useTemplate,
+    createTemplate,
+    // Macros
+    saveMacro,
+    deleteMacro,
   };
 }

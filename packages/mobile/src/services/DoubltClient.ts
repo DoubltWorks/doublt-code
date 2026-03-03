@@ -11,6 +11,12 @@
  * - Terminal I/O sync (view PC terminal output on mobile)
  * - Push notification token registration
  * - Long-running command tracking
+ * - Approval policy management
+ * - Task queue operations
+ * - Catch-up digest & timeline
+ * - Git status queries
+ * - Cost & usage tracking
+ * - Search & templates
  */
 
 import { EventEmitter } from 'events';
@@ -19,6 +25,10 @@ import type {
   ServerMessage,
   SessionId,
   WorkspaceId,
+  TaskPriority,
+  ApprovalPreset,
+  SearchQuery,
+  BudgetConfig,
 } from '@doublt/shared';
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
@@ -177,6 +187,84 @@ export class DoubltClient extends EventEmitter {
       case 'command:status':
         this.emit('commandStatus', msg.command);
         break;
+
+      // Approval policy
+      case 'policy:result':
+        this.emit('policyResult', msg.policy);
+        break;
+      case 'policy:list:result':
+        this.emit('policiesUpdated', msg.policies);
+        break;
+      case 'approval:queue:result':
+        this.emit('approvalQueueUpdated', msg.queue);
+        break;
+      case 'approval:needed':
+        this.emit('approvalNeeded', msg.item);
+        break;
+      case 'approval:decided':
+        this.emit('approvalDecided', msg.decision);
+        break;
+
+      // Task queue
+      case 'task:created':
+        this.emit('taskCreated', msg.task);
+        break;
+      case 'task:updated':
+        this.emit('taskUpdated', msg.task);
+        break;
+      case 'task:deleted':
+        this.emit('taskDeleted', msg.taskId);
+        break;
+      case 'task:list:result':
+        this.emit('tasksUpdated', msg.tasks);
+        break;
+
+      // Digest & timeline
+      case 'digest:result':
+        this.emit('digestResult', msg.digest);
+        break;
+      case 'timeline:result':
+        this.emit('timelineResult', msg.entries);
+        break;
+      case 'history:result':
+        this.emit('historyResult', msg.page);
+        break;
+
+      // Git status
+      case 'git:status:result':
+        this.emit('gitStatusResult', { sessionId: msg.sessionId, status: msg.status });
+        break;
+      case 'git:log:result':
+        this.emit('gitLogResult', { sessionId: msg.sessionId, commits: msg.commits });
+        break;
+      case 'git:diff:result':
+        this.emit('gitDiffResult', { sessionId: msg.sessionId, diffs: msg.diffs });
+        break;
+
+      // Cost & usage
+      case 'cost:update':
+        this.emit('costUpdate', { sessionId: msg.sessionId, usage: msg.usage, estimatedCostUsd: msg.estimatedCostUsd });
+        break;
+      case 'usage:result':
+        this.emit('usageResult', msg.summary);
+        break;
+      case 'budget:alert':
+        this.emit('budgetAlert', msg.alert);
+        break;
+
+      // Search & templates
+      case 'search:result':
+        this.emit('searchResults', msg.results);
+        break;
+      case 'template:list:result':
+        this.emit('templatesUpdated', msg.templates);
+        break;
+      case 'template:created':
+        this.emit('templateCreated', msg.template);
+        break;
+      case 'template:used':
+        this.emit('templateUsed', msg.template);
+        break;
     }
   }
 
@@ -274,5 +362,105 @@ export class DoubltClient extends EventEmitter {
 
   unregisterPushToken(): void {
     this.sendRaw({ type: 'push:unregister' });
+  }
+
+  // ─── Approval Policy API ────────────────────────────
+
+  setPolicy(preset: ApprovalPreset): void {
+    this.sendRaw({ type: 'policy:set', preset });
+  }
+
+  getPolicy(): void {
+    this.sendRaw({ type: 'policy:get' });
+  }
+
+  listPolicies(): void {
+    this.sendRaw({ type: 'policy:list' });
+  }
+
+  listApprovalQueue(): void {
+    this.sendRaw({ type: 'approval:queue:list' });
+  }
+
+  decideApproval(queueItemId: string, approved: boolean, reason?: string): void {
+    this.sendRaw({ type: 'approval:decide', queueItemId, approved, reason });
+  }
+
+  // ─── Task Queue API ─────────────────────────────────
+
+  createTask(title: string, description: string, priority: TaskPriority, workspaceId?: string, sessionId?: string): void {
+    this.sendRaw({ type: 'task:create', title, description, priority, workspaceId, sessionId });
+  }
+
+  updateTask(taskId: string, updates: Record<string, unknown>): void {
+    this.sendRaw({ type: 'task:update', taskId, updates: updates as any });
+  }
+
+  deleteTask(taskId: string): void {
+    this.sendRaw({ type: 'task:delete', taskId });
+  }
+
+  reorderTasks(taskIds: string[]): void {
+    this.sendRaw({ type: 'task:reorder', taskIds });
+  }
+
+  listTasks(workspaceId?: string): void {
+    this.sendRaw({ type: 'task:list', workspaceId });
+  }
+
+  // ─── Digest & Timeline API ──────────────────────────
+
+  requestDigest(since: number): void {
+    this.sendRaw({ type: 'digest:request', since });
+  }
+
+  requestTimeline(sessionId?: string, limit?: number, offset?: number): void {
+    this.sendRaw({ type: 'timeline:request', sessionId, limit, offset });
+  }
+
+  requestHistory(sessionId: string, cursor?: string, limit?: number): void {
+    this.sendRaw({ type: 'history:request', sessionId, cursor, limit });
+  }
+
+  // ─── Git Status API ─────────────────────────────────
+
+  requestGitStatus(sessionId: SessionId): void {
+    this.sendRaw({ type: 'git:status:request', sessionId });
+  }
+
+  requestGitLog(sessionId: SessionId, count?: number): void {
+    this.sendRaw({ type: 'git:log:request', sessionId, count });
+  }
+
+  requestGitDiff(sessionId: SessionId, filePath?: string, staged?: boolean): void {
+    this.sendRaw({ type: 'git:diff:request', sessionId, filePath, staged });
+  }
+
+  // ─── Cost & Usage API ───────────────────────────────
+
+  requestUsage(period?: 'daily' | 'weekly' | 'monthly'): void {
+    this.sendRaw({ type: 'usage:request', period });
+  }
+
+  setBudget(config: Partial<BudgetConfig>): void {
+    this.sendRaw({ type: 'budget:set', config });
+  }
+
+  // ─── Search & Template API ──────────────────────────
+
+  search(query: SearchQuery): void {
+    this.sendRaw({ type: 'search:query', query });
+  }
+
+  listTemplates(category?: string): void {
+    this.sendRaw({ type: 'template:list', category });
+  }
+
+  createTemplate(name: string, description: string, category: string, prompts: string[], tags?: string[]): void {
+    this.sendRaw({ type: 'template:create', name, description, category, prompts, tags });
+  }
+
+  useTemplate(templateId: string): void {
+    this.sendRaw({ type: 'template:use', templateId });
   }
 }

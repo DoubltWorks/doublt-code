@@ -22,7 +22,10 @@ import {
   Platform,
   StyleSheet,
 } from 'react-native';
-import type { ChatMessage, ToolUseMessage, SessionListItem } from '@doublt/shared';
+import type { ChatMessage, ToolUseMessage, SessionListItem, CommandMacro } from '@doublt/shared';
+import { CostBadge } from '../components/CostBadge';
+import { QuickActionBar } from '../components/QuickActionBar';
+import { VoiceInputButton } from '../components/VoiceInputButton';
 
 interface Props {
   sessionInfo: SessionListItem | null;
@@ -32,6 +35,12 @@ interface Props {
   onApproveTool: (toolUseId: string, approved: boolean) => void;
   onHandoff: () => void;
   onBack: () => void;
+  costUsd?: number;
+  macros?: CommandMacro[];
+  onOpenApprovals?: () => void;
+  onOpenTasks?: () => void;
+  onOpenDigest?: () => void;
+  onOpenUsage?: () => void;
 }
 
 function MessageBubble({ message }: { message: ChatMessage }) {
@@ -88,6 +97,12 @@ export function ChatScreen({
   onApproveTool,
   onHandoff,
   onBack,
+  costUsd = 0,
+  macros = [],
+  onOpenApprovals,
+  onOpenTasks,
+  onOpenDigest,
+  onOpenUsage,
 }: Props) {
   const [input, setInput] = useState('');
   const flatListRef = useRef<FlatList>(null);
@@ -128,6 +143,7 @@ export function ChatScreen({
             <Text style={[styles.contextLabel, { color: contextColor }]}>
               ctx: {contextPct}%
             </Text>
+            {costUsd > 0 && <CostBadge costUsd={costUsd} />}
             {(sessionInfo?.clientCount ?? 0) > 1 && (
               <Text style={styles.multiDevice}>{sessionInfo!.clientCount} devices</Text>
             )}
@@ -160,8 +176,25 @@ export function ChatScreen({
         style={styles.messageListContainer}
       />
 
+      {/* Quick Actions */}
+      <QuickActionBar
+        actions={[]}
+        macros={macros}
+        onAction={(action) => {
+          if (action.action === 'chat_send' && action.payload) {
+            onSendMessage(action.payload);
+          } else if (action.action === 'trigger_handoff') {
+            onHandoff();
+          } else if (action.action === 'approve_all' && onOpenApprovals) {
+            onOpenApprovals();
+          }
+        }}
+        onMacro={(macro) => onSendMessage(macro.command)}
+      />
+
       {/* Input */}
       <View style={styles.inputContainer}>
+        <VoiceInputButton onVoiceResult={(text) => setInput(prev => prev + text)} size={36} />
         <TextInput
           style={styles.input}
           value={input}
