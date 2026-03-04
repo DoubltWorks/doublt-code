@@ -55,6 +55,11 @@ export interface SessionDetachMsg {
   sessionId: SessionId;
 }
 
+export interface SessionArchiveMsg {
+  type: 'session:archive';
+  sessionId: SessionId;
+}
+
 export interface SessionListMsg {
   type: 'session:list';
   /** Optional: filter sessions by workspace */
@@ -297,6 +302,7 @@ export interface ClaudeStatusMsg {
 export type ClientMessage =
   | AuthenticateMsg
   | SessionCreateMsg
+  | SessionArchiveMsg
   | SessionAttachMsg
   | SessionDetachMsg
   | SessionListMsg
@@ -368,6 +374,11 @@ export interface SessionListResultMsg {
 export interface SessionUpdatedMsg {
   type: 'session:updated';
   session: SessionListItem;
+}
+
+export interface SessionArchivedMsg {
+  type: 'session:archived';
+  sessionId: SessionId;
 }
 
 export interface ChatMessageMsg {
@@ -611,6 +622,7 @@ export type ServerMessage =
   | SessionCreatedMsg
   | SessionListResultMsg
   | SessionUpdatedMsg
+  | SessionArchivedMsg
   | ChatMessageMsg
   | ChatStreamMsg
   | ToolUseMsg

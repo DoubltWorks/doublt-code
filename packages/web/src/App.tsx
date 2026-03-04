@@ -28,6 +28,7 @@ export function App() {
     activeSessionId,
     setActiveSessionId,
     createSession,
+    archiveSession,
   } = useSessionManager(send, subscribe, connectionState);
 
   const {
@@ -79,6 +80,7 @@ export function App() {
         sessions={sessions}
         activeSessionId={activeSessionId}
         onSelectSession={handleSelectSession}
+        onArchiveSession={archiveSession}
       />
 
       <div style={{ flex: 1, overflow: 'hidden' }}>

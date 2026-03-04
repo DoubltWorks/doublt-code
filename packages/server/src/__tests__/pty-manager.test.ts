@@ -361,14 +361,14 @@ describe('PtyManager', () => {
     });
 
     it('getInfo returns session info with correct fields', async () => {
-      await ptyManager.spawn('s1', { cwd: '/test' });
+      await ptyManager.spawn('s1', { cwd: '/tmp' });
       const info = ptyManager.getInfo('s1');
 
       expect(info).toBeDefined();
       expect(info!.sessionId).toBe('s1');
       expect(info!.pid).toBe(12345);
       expect(info!.alive).toBe(true);
-      expect(info!.cwd).toBe('/test');
+      expect(info!.cwd).toBe('/tmp');
     });
 
     it('getInfo returns undefined for unknown session', () => {

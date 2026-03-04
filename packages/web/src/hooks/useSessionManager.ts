@@ -21,6 +21,7 @@ interface UseSessionManagerReturn {
   createSession: () => void;
   attachSession: (id: string) => void;
   detachSession: (id: string) => void;
+  archiveSession: (id: string) => void;
 }
 
 export function useSessionManager(
@@ -56,6 +57,16 @@ export function useSessionManager(
             prev.map((s) => (s.id === msg.session.id ? { ...s, ...msg.session } : s)),
           );
           break;
+
+        case 'session:archived':
+          setSessions((prev) => {
+            const next = prev.filter((s) => s.id !== msg.sessionId);
+            if (activeSessionIdRef.current === msg.sessionId) {
+              setActiveSessionId(next.length > 0 ? next[0].id : null);
+            }
+            return next;
+          });
+          break;
       }
     });
 
@@ -90,6 +101,13 @@ export function useSessionManager(
     [send],
   );
 
+  const archiveSession = useCallback(
+    (id: string) => {
+      send({ type: 'session:archive', sessionId: id });
+    },
+    [send],
+  );
+
   return {
     sessions,
     activeSessionId,
@@ -97,5 +115,6 @@ export function useSessionManager(
     createSession,
     attachSession,
     detachSession,
+    archiveSession,
   };
 }

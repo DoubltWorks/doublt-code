@@ -4,9 +4,10 @@ interface SessionTabsProps {
   sessions: SessionInfo[];
   activeSessionId: string | null;
   onSelectSession: (id: string) => void;
+  onArchiveSession?: (id: string) => void;
 }
 
-export function SessionTabs({ sessions, activeSessionId, onSelectSession }: SessionTabsProps) {
+export function SessionTabs({ sessions, activeSessionId, onSelectSession, onArchiveSession }: SessionTabsProps) {
   if (sessions.length === 0) return null;
 
   return (
@@ -49,6 +50,25 @@ export function SessionTabs({ sessions, activeSessionId, onSelectSession }: Sess
                 }}
               >
                 {Math.round(session.contextUsage * 100)}%
+              </span>
+            )}
+            {onArchiveSession && sessions.length > 1 && (
+              <span
+                role="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onArchiveSession(session.id);
+                }}
+                style={{
+                  marginLeft: 6,
+                  fontSize: 10,
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: '0 2px',
+                  lineHeight: 1,
+                }}
+              >
+                ×
               </span>
             )}
           </button>

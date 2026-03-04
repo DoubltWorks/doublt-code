@@ -10,6 +10,8 @@
  */
 
 import { EventEmitter } from 'node:events';
+import { existsSync } from 'node:fs';
+import os from 'node:os';
 import type { SessionId } from '@doublt/shared';
 import type { TerminalSyncManager } from './TerminalSyncManager.js';
 
@@ -100,8 +102,16 @@ export class PtyManager extends EventEmitter {
 
     const nodePty = await this.loadPtyModule();
 
-    const shell = options.shell || process.env.SHELL || '/bin/zsh';
-    const cwd = options.cwd || process.cwd();
+    let shell = options.shell || process.env.SHELL || '/bin/zsh';
+    if (!existsSync(shell)) {
+      console.warn(`[PTY] Shell not found: ${shell}, falling back to /bin/sh`);
+      shell = '/bin/sh';
+    }
+    let cwd = options.cwd || process.cwd();
+    if (!existsSync(cwd)) {
+      console.warn(`[PTY] cwd not found: ${cwd}, falling back to ${os.homedir()}`);
+      cwd = os.homedir();
+    }
     const cols = options.cols || 80;
     const rows = options.rows || 24;
 

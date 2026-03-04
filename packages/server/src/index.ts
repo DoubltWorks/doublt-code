@@ -633,6 +633,25 @@ export class DoubltServer {
         break;
       }
 
+      case 'session:archive': {
+        this.claudeRunner.stopClaude(msg.sessionId).catch(() => {});
+        this.ptyManager.kill(msg.sessionId).then(() => {
+          this.sessionManager.archive(msg.sessionId);
+          this.connectionManager.broadcastToAll({
+            type: 'session:archived',
+            sessionId: msg.sessionId,
+          });
+        }).catch((err: any) => {
+          this.connectionManager.sendToClient(clientId, {
+            type: 'error',
+            code: 'SESSION_ARCHIVE_FAILED',
+            message: err.message ?? 'Failed to archive session',
+            sessionId: msg.sessionId,
+          });
+        });
+        break;
+      }
+
       case 'session:detach': {
         this.sessionManager.detachClient(msg.sessionId, clientId);
         break;
