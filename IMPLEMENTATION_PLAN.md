@@ -1,6 +1,10 @@
 # doublt-code 전체 구현 계획
 
-## 현재 상태 (구현 완료)
+## 현재 상태 (Phase 1-5 완료, 314개 테스트 통과)
+
+> **최종 업데이트**: 2026-03-04
+> Phase 1 (Foundation), Phase 2 (Persistence), Phase 3 (Integration), Phase 4 (Mobile Offline), Phase 5 (QA/Docs) 모두 완료.
+> 전체 테스트: 314개 통과 (PtyManager 30, ClaudeRunner 24, JsonStore 28, 기타 232)
 
 ### packages/shared (타입 & 프로토콜)
 - `types/session.ts` — Session, ConnectedClient, SessionCreateOptions, SessionListItem

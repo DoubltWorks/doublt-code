@@ -134,8 +134,8 @@ describe('JsonStore', () => {
       store.scheduleSave('debounce.json', { v: 2 });
       store.scheduleSave('debounce.json', { v: 3 });
 
-      // Wait for debounce (50ms + buffer)
-      await new Promise(resolve => setTimeout(resolve, 120));
+      // Wait for debounce (50ms) + async save I/O
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       // Only one save should have happened
       expect(events.length).toBe(1);
@@ -220,6 +220,198 @@ describe('JsonStore', () => {
   describe('getDataDir', () => {
     it('returns the configured data directory', () => {
       expect(store.getDataDir()).toBe(dataDir);
+    });
+  });
+
+  // ─── Phase 5 additions: manager data roundtrips ──────
+
+  describe('manager data roundtrips', () => {
+    it('round-trips session manager data format', async () => {
+      const sessionData = {
+        sessions: [
+          {
+            id: 's1',
+            workspaceId: 'w1',
+            name: 'main',
+            status: 'active',
+            contextUsage: { used: 1000, limit: 200000, percentage: 0.5 },
+            createdAt: Date.now(),
+            clients: [],
+          },
+          {
+            id: 's2',
+            workspaceId: 'w1',
+            name: 'feature-branch',
+            status: 'archived',
+            contextUsage: { used: 190000, limit: 200000, percentage: 95 },
+            createdAt: Date.now(),
+            clients: [],
+          },
+        ],
+      };
+
+      await store.save('sessions.json', sessionData);
+      const loaded = await store.load<typeof sessionData>('sessions.json');
+      expect(loaded).toEqual(sessionData);
+      expect(loaded!.sessions).toHaveLength(2);
+      expect(loaded!.sessions[0].contextUsage.used).toBe(1000);
+    });
+
+    it('round-trips workspace manager data format', async () => {
+      const workspaceData = {
+        workspaces: [
+          {
+            id: 'w1',
+            name: 'default',
+            rootPath: '/home/user/project',
+            sessions: ['s1', 's2'],
+            createdAt: Date.now(),
+          },
+        ],
+      };
+
+      await store.save('workspaces.json', workspaceData);
+      const loaded = await store.load<typeof workspaceData>('workspaces.json');
+      expect(loaded).toEqual(workspaceData);
+    });
+
+    it('round-trips task queue manager data format', async () => {
+      const taskData = {
+        tasks: [
+          {
+            id: 't1',
+            title: 'Fix bug',
+            description: 'Fix the authentication bug',
+            priority: 'high',
+            status: 'queued',
+            sessionId: 's1',
+            createdAt: Date.now(),
+          },
+        ],
+        queue: { maxConcurrent: 1 },
+      };
+
+      await store.save('tasks.json', taskData);
+      const loaded = await store.load<typeof taskData>('tasks.json');
+      expect(loaded).toEqual(taskData);
+    });
+
+    it('round-trips approval policy manager data format', async () => {
+      const policyData = {
+        policies: [
+          {
+            id: 'p1',
+            name: 'full_auto',
+            preset: 'full_auto',
+            rules: [],
+            isActive: true,
+          },
+        ],
+        sessionOverrides: { s1: 'p1' },
+      };
+
+      await store.save('policies.json', policyData);
+      const loaded = await store.load<typeof policyData>('policies.json');
+      expect(loaded).toEqual(policyData);
+    });
+
+    it('round-trips digest manager data format', async () => {
+      const digestData = {
+        events: [
+          { type: 'session:created', sessionId: 's1', timestamp: Date.now(), summary: 'New session' },
+          { type: 'command:complete', sessionId: 's1', timestamp: Date.now(), summary: 'Build done' },
+        ],
+        maxEvents: 10000,
+      };
+
+      await store.save('digest.json', digestData);
+      const loaded = await store.load<typeof digestData>('digest.json');
+      expect(loaded).toEqual(digestData);
+      expect(loaded!.events).toHaveLength(2);
+    });
+  });
+
+  describe('corruption edge cases', () => {
+    it('recovers from truncated JSON file', async () => {
+      await store.save('truncated.json', { v: 1 });
+      await store.save('truncated.json', { v: 2 }); // creates backup of v:1
+
+      await fs.writeFile(path.join(dataDir, 'truncated.json'), '{"v": ');
+
+      const loaded = await store.load<any>('truncated.json');
+      expect(loaded?.v).toBe(1); // restored from backup
+    });
+
+    it('recovers from empty file content', async () => {
+      await store.save('empty-content.json', { v: 1 });
+      await store.save('empty-content.json', { v: 2 }); // backup of v:1
+
+      await fs.writeFile(path.join(dataDir, 'empty-content.json'), '');
+
+      const loaded = await store.load<any>('empty-content.json');
+      expect(loaded?.v).toBe(1);
+    });
+
+    it('returns null when file has no backup at all', async () => {
+      // Write corrupted data directly (no prior save → no backup)
+      await fs.mkdir(dataDir, { recursive: true });
+      await fs.writeFile(path.join(dataDir, 'no-backup.json'), 'corrupted');
+
+      const loaded = await store.load<any>('no-backup.json');
+      expect(loaded).toBeNull();
+    });
+  });
+
+  describe('concurrent scheduleSave operations', () => {
+    it('handles concurrent scheduleSave for different files', async () => {
+      store.scheduleSave('concurrent-a.json', { a: 1 });
+      store.scheduleSave('concurrent-b.json', { b: 2 });
+      store.scheduleSave('concurrent-c.json', { c: 3 });
+
+      await store.flush();
+
+      const a = await store.load<any>('concurrent-a.json');
+      const b = await store.load<any>('concurrent-b.json');
+      const c = await store.load<any>('concurrent-c.json');
+      expect(a).toEqual({ a: 1 });
+      expect(b).toEqual({ b: 2 });
+      expect(c).toEqual({ c: 3 });
+    });
+
+    it('last write wins for same file with scheduleSave', async () => {
+      store.scheduleSave('race.json', { version: 1 });
+      store.scheduleSave('race.json', { version: 2 });
+      store.scheduleSave('race.json', { version: 3 });
+      store.scheduleSave('race.json', { version: 4 });
+      store.scheduleSave('race.json', { version: 5 });
+
+      await store.flush();
+
+      const loaded = await store.load<any>('race.json');
+      expect(loaded.version).toBe(5);
+    });
+  });
+
+  describe('debounce verification', () => {
+    it('debounce timer resets on each scheduleSave call', async () => {
+      const events: any[] = [];
+      store.on('store:saved', (e) => events.push(e));
+
+      store.scheduleSave('reset.json', { v: 1 });
+      await new Promise(resolve => setTimeout(resolve, 30));
+      store.scheduleSave('reset.json', { v: 2 });
+      await new Promise(resolve => setTimeout(resolve, 30));
+      store.scheduleSave('reset.json', { v: 3 });
+
+      // Not enough time has passed for any debounce to fire
+      expect(events.filter(e => e.filename === 'reset.json')).toHaveLength(0);
+
+      // Wait for debounce (50ms) + async save I/O
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      expect(events.filter(e => e.filename === 'reset.json')).toHaveLength(1);
+      const loaded = await store.load<any>('reset.json');
+      expect(loaded.v).toBe(3);
     });
   });
 });

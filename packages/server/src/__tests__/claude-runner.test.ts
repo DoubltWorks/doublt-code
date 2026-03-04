@@ -210,4 +210,129 @@ describe('ClaudeSessionRunner', () => {
       expect(runner.isRunning('s1')).toBe(true);
     });
   });
+
+  // ─── Phase 5 additions ──────────────────────────────
+
+  describe('multiple sessions with budget', () => {
+    it('budget pause affects all running sessions', async () => {
+      await runner.startClaude('s1');
+      await runner.startClaude('s2');
+
+      cost.emit('budget:exceeded');
+
+      expect(runner.getState('s1')?.status).toBe('budget_paused');
+      expect(runner.getState('s2')?.status).toBe('budget_paused');
+      expect(runner.listSessions().every(s => s.status === 'budget_paused')).toBe(true);
+    });
+
+    it('resume restores all paused sessions to idle', async () => {
+      await runner.startClaude('s1');
+      await runner.startClaude('s2');
+      cost.emit('budget:exceeded');
+
+      runner.resumeFromBudgetPause();
+      expect(runner.getState('s1')?.status).toBe('idle');
+      expect(runner.getState('s2')?.status).toBe('idle');
+    });
+
+    it('does not pause already stopped sessions', async () => {
+      await runner.startClaude('s1');
+      await runner.startClaude('s2');
+      await runner.stopClaude('s2');
+      vi.advanceTimersByTime(600);
+
+      cost.emit('budget:exceeded');
+      expect(runner.getState('s1')?.status).toBe('budget_paused');
+      expect(runner.getState('s2')?.status).toBe('stopped');
+    });
+  });
+
+  describe('prompt handling', () => {
+    it('sanitizes shell metacharacters in prompt', async () => {
+      await runner.startClaude('s1', { prompt: 'fix $HOME `cmd` path\\test' });
+      vi.advanceTimersByTime(2100);
+
+      const promptCalls = pty.write.mock.calls.filter(
+        (c: [string, string]) => !c[1].includes('claude') && c[1].endsWith('\n') && c[1].length > 1
+      );
+      expect(promptCalls.length).toBeGreaterThanOrEqual(1);
+      const sentPrompt = promptCalls[0][1];
+      expect(sentPrompt).toContain('\\$HOME');
+      expect(sentPrompt).toContain('\\`cmd\\`');
+    });
+
+    it('does not send prompt if session crashes before delay', async () => {
+      await runner.startClaude('s1', { prompt: 'build it' });
+
+      // Crash before the 2s prompt delay
+      pty.emit('pty:exited', { sessionId: 's1', exitCode: 1 });
+
+      vi.advanceTimersByTime(2100);
+      // Prompt should not be sent since status is no longer 'running'
+      const promptCalls = pty.write.mock.calls.filter(
+        (c: [string, string]) => c[1].includes('build it')
+      );
+      expect(promptCalls).toHaveLength(0);
+    });
+  });
+
+  describe('restart behavior', () => {
+    it('preserves original prompt on restart', async () => {
+      runner.destroy();
+      runner = new ClaudeSessionRunner(pty as any, cost as any, {
+        maxRestarts: 3,
+        maxTaskDurationMs: 600_000,
+      });
+
+      await runner.startClaude('s1', { prompt: 'build the app', autoRestart: true });
+      pty.write.mockClear();
+
+      pty.emit('pty:exited', { sessionId: 's1', exitCode: 1 });
+      vi.advanceTimersByTime(1100);
+
+      expect(pty.write).toHaveBeenCalledWith('s1', expect.stringContaining('claude'));
+    });
+
+    it('resets restart count on clean exit', async () => {
+      await runner.startClaude('s1', { autoRestart: true });
+
+      // Crash once
+      pty.emit('pty:exited', { sessionId: 's1', exitCode: 1 });
+      vi.advanceTimersByTime(1100);
+
+      // Restart happens, now clean exit
+      pty.emit('pty:exited', { sessionId: 's1', exitCode: 0 });
+      expect(runner.getState('s1')?.restartCount).toBe(0);
+    });
+  });
+
+  describe('task association', () => {
+    it('associates and retrieves task for session', async () => {
+      runner.setTaskForSession('s1', 'task-001');
+      expect(runner.getTaskForSession('s1')).toBe('task-001');
+    });
+
+    it('clears task association', async () => {
+      runner.setTaskForSession('s1', 'task-001');
+      runner.clearTaskForSession('s1');
+      expect(runner.getTaskForSession('s1')).toBeUndefined();
+    });
+  });
+
+  describe('destroy', () => {
+    it('cleans up all timers without errors', async () => {
+      await runner.startClaude('s1');
+      await runner.startClaude('s2', { prompt: 'test', autoRestart: true });
+
+      // Create a restart timer by crashing s2
+      pty.emit('pty:exited', { sessionId: 's2', exitCode: 1 });
+
+      // destroy should clean up restart, task, and prompt timers
+      runner.destroy();
+
+      // Advancing timers should not trigger any callbacks
+      vi.advanceTimersByTime(600_000);
+      // No errors expected — destroy was clean
+    });
+  });
 });
