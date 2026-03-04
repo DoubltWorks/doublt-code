@@ -50,7 +50,7 @@ import { DigestManager } from './digest/DigestManager.js';
 import { GitManager } from './git/GitManager.js';
 import { CostTracker } from './cost/CostTracker.js';
 import { SearchManager } from './search/SearchManager.js';
-import type { ClientMessage, ServerMessage, GitStatus, GitCommit, GitDiff } from '@doublt/shared';
+import type { ClientMessage, ServerMessage, GitStatus, GitCommit, GitDiff, Session, Workspace, Task, ApprovalPolicy } from '@doublt/shared';
 
 export interface DoubltServerOptions {
   port?: number;
@@ -940,11 +940,11 @@ export class DoubltServer {
   }
 
   /**
-   * Save all manager state to JSON files.
+   * Save all manager state to JSON files using full raw objects.
    */
   async saveState(): Promise<void> {
-    const sessions = this.sessionManager.list();
-    const workspaces = this.workspaceManager.list();
+    const sessions = this.sessionManager.listAll();
+    const workspaces = this.workspaceManager.listAllWorkspaces();
     const tasks = this.taskQueueManager.listTasks();
     const policies = this.approvalManager.listPolicies();
 
@@ -957,37 +957,66 @@ export class DoubltServer {
   }
 
   /**
+   * Load persisted state from disk and restore all managers.
+   * Returns true if any state was restored.
+   */
+  async loadState(): Promise<boolean> {
+    const [sessions, workspaces, tasks, policies] = await Promise.all([
+      this.jsonStore.load<Session[]>('sessions.json'),
+      this.jsonStore.load<Workspace[]>('workspaces.json'),
+      this.jsonStore.load<Task[]>('tasks.json'),
+      this.jsonStore.load<ApprovalPolicy[]>('policies.json'),
+    ]);
+
+    let restored = false;
+    if (sessions?.length) { this.sessionManager.restoreSessions(sessions); restored = true; }
+    if (workspaces?.length) { this.workspaceManager.restoreWorkspaces(workspaces); restored = true; }
+    if (tasks?.length) { this.taskQueueManager.restoreTasks(tasks); restored = true; }
+    if (policies?.length) { this.approvalManager.restorePolicies(policies); restored = true; }
+
+    return restored;
+  }
+
+  /**
    * Schedule debounced state persistence on any state change.
    */
   private scheduleSave(filename: string, getData: () => unknown): void {
     this.jsonStore.scheduleSave(filename, getData());
   }
 
-  start(): void {
+  async start(): Promise<void> {
     const serverToken = this.authManager.generateServerToken();
     this.connectionManager.start(this.port);
 
     console.log(`doublt-code server started on port ${this.port}`);
     console.log(`Server token: ${serverToken}`);
 
-    // Create a default workspace and session
-    const defaultWorkspace = this.workspaceManager.create({ name: 'default' });
-    const defaultSession = this.sessionManager.create({
-      name: 'default',
-      workspaceId: defaultWorkspace.id,
-    });
-    this.workspaceManager.addSession(defaultWorkspace.id, defaultSession.id);
+    // Try to restore previous state from disk
+    const restored = await this.loadState();
 
-    // Index defaults for search
-    this.searchManager.indexWorkspace(defaultWorkspace.id, defaultWorkspace.name, defaultWorkspace.cwd);
-    this.searchManager.indexSession(defaultSession.id, defaultSession.name, defaultSession.cwd);
+    if (!restored) {
+      // First run — create a default workspace and session
+      const defaultWorkspace = this.workspaceManager.create({ name: 'default' });
+      const defaultSession = this.sessionManager.create({
+        name: 'default',
+        workspaceId: defaultWorkspace.id,
+      });
+      this.workspaceManager.addSession(defaultWorkspace.id, defaultSession.id);
 
-    // Periodic cleanup
+      // Index defaults for search
+      this.searchManager.indexWorkspace(defaultWorkspace.id, defaultWorkspace.name, defaultWorkspace.cwd);
+      this.searchManager.indexSession(defaultSession.id, defaultSession.name, defaultSession.cwd);
+    } else {
+      console.log('Restored previous state from disk');
+    }
+
+    // Periodic cleanup + auto-save every 30s
     setInterval(() => {
       this.sessionManager.pruneStaleClients();
       this.authManager.cleanup();
       this.notificationManager.cleanup();
       this.digestManager.clearOldEvents(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      this.saveState().catch(err => console.warn('[doublt] saveState error:', err));
     }, 30_000);
   }
 
@@ -1020,7 +1049,6 @@ export class DoubltServer {
 if (process.argv[1]?.endsWith('index.ts') || process.argv[1]?.endsWith('index.js')) {
   const port = parseInt(process.env.DOUBLT_PORT ?? '9800', 10);
   const server = new DoubltServer({ port });
-  server.start();
 
   const shutdown = async () => {
     await server.stop();
@@ -1028,6 +1056,11 @@ if (process.argv[1]?.endsWith('index.ts') || process.argv[1]?.endsWith('index.js
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+
+  server.start().catch(err => {
+    console.error('Failed to start server:', err);
+    process.exit(1);
+  });
 }
 
 export { SessionManager } from './session/SessionManager.js';

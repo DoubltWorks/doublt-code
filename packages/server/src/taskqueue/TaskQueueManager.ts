@@ -161,6 +161,15 @@ export class TaskQueueManager extends EventEmitter {
     }
   }
 
+  /**
+   * Restore tasks from persisted state.
+   */
+  restoreTasks(tasks: Task[]): void {
+    for (const task of tasks) {
+      this.tasks.set(task.id, { ...task });
+    }
+  }
+
   destroy(): void {
     clearInterval(this.scheduleInterval);
   }

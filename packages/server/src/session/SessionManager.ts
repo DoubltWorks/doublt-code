@@ -175,6 +175,27 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
+   * Return all sessions as raw Session objects (for persistence).
+   */
+  listAll(): Session[] {
+    return Array.from(this.sessions.values());
+  }
+
+  /**
+   * Restore sessions from persisted state. Clears connected clients
+   * since no clients are present on startup.
+   */
+  restoreSessions(sessions: Session[]): void {
+    for (const session of sessions) {
+      // No clients are connected on startup
+      const restored: Session = { ...session, clients: [] };
+      this.sessions.set(restored.id, restored);
+      // Keep nextIndex beyond the highest restored session index
+      this.nextIndex++;
+    }
+  }
+
+  /**
    * Remove stale clients that haven't been seen recently.
    * This prevents the "stuck remote mode" problem from Happy Coder.
    */

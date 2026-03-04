@@ -162,6 +162,15 @@ export class ApprovalPolicyManager extends EventEmitter {
     return decision;
   }
 
+  /**
+   * Restore policies from persisted state.
+   */
+  restorePolicies(policies: ApprovalPolicy[]): void {
+    for (const policy of policies) {
+      this.policies.set(policy.id, { ...policy });
+    }
+  }
+
   applyPreset(preset: ApprovalPreset): ApprovalPolicy {
     let name: string;
     let description: string;

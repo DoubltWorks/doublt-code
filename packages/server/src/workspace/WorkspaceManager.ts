@@ -135,6 +135,23 @@ export class WorkspaceManager extends EventEmitter {
     }
   }
 
+  /**
+   * Return all workspaces as raw Workspace objects (for persistence).
+   */
+  listAllWorkspaces(): Workspace[] {
+    return Array.from(this.workspaces.values());
+  }
+
+  /**
+   * Restore workspaces from persisted state.
+   */
+  restoreWorkspaces(workspaces: Workspace[]): void {
+    for (const workspace of workspaces) {
+      this.workspaces.set(workspace.id, { ...workspace });
+      this.nextIndex++;
+    }
+  }
+
   /** Get all sessions for a workspace */
   getWorkspaceSessions(workspaceId: WorkspaceId): string[] {
     return this.workspaces.get(workspaceId)?.sessionIds ?? [];

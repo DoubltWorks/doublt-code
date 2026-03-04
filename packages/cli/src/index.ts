@@ -34,7 +34,7 @@ program
   .action(async (opts: { port: string; name: string }) => {
     const port = parseInt(opts.port, 10);
     const server = new DoubltServer({ port });
-    server.start();
+    await server.start();
 
     // Connect to ourselves as CLI client
     const token = server.authManager.generateServerToken();
