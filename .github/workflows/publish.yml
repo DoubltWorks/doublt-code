@@ -23,7 +23,7 @@ jobs:
         with:
           version: 9
 
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install
 
       - run: npm run build
 
