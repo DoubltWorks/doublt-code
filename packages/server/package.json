@@ -13,7 +13,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@doublt/shared": "*",
+    "@doublt/shared": "workspace:*",
     "ws": "^8.16.0",
     "express": "^4.18.0",
     "nanoid": "^5.0.0",

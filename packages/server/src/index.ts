@@ -1045,8 +1045,12 @@ export class DoubltServer {
   }
 }
 
-// CLI entry point
-if (process.argv[1]?.endsWith('index.ts') || process.argv[1]?.endsWith('index.js')) {
+// Standalone CLI entry point — only runs when this file is the direct entry
+const isDirectEntry = process.argv[1] && (
+  process.argv[1].includes('packages/server/src/index') ||
+  process.argv[1].includes('packages/server/dist/index')
+);
+if (isDirectEntry) {
   const port = parseInt(process.env.DOUBLT_PORT ?? '9800', 10);
   const server = new DoubltServer({ port });
 
