@@ -25,5 +25,9 @@
     "tsx": "^4.7.0",
     "typescript": "^5.5.0",
     "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "cli": "link:../../../Library/pnpm/global/5/node_modules/packages/cli",
+    "node-pty": "^1.1.0"
   }
 }

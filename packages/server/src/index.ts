@@ -34,6 +34,11 @@
  *    Both connected simultaneously — no mode switching!
  */
 
+import express from 'express';
+import { createServer, type Server as HttpServer } from 'node:http';
+import path from 'node:path';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { SessionManager } from './session/SessionManager.js';
 import { ConnectionManager } from './websocket/ConnectionManager.js';
 import { HandoffManager } from './handoff/HandoffManager.js';
@@ -50,12 +55,16 @@ import { DigestManager } from './digest/DigestManager.js';
 import { GitManager } from './git/GitManager.js';
 import { CostTracker } from './cost/CostTracker.js';
 import { SearchManager } from './search/SearchManager.js';
+import { TunnelManager } from './tunnel/TunnelManager.js';
 import type { ClientMessage, ServerMessage, GitStatus, GitCommit, GitDiff, Session, Workspace, Task, ApprovalPolicy } from '@doublt/shared';
 
 export interface DoubltServerOptions {
   port?: number;
   host?: string;
   baseDir?: string;
+  tunnel?: 'cloudflare' | 'ngrok' | 'none';
+  /** Enable web GUI static file serving (default: true) */
+  webGui?: boolean;
 }
 
 export class DoubltServer {
@@ -75,13 +84,17 @@ export class DoubltServer {
   readonly gitManager: GitManager;
   readonly costTracker: CostTracker;
   readonly searchManager: SearchManager;
+  readonly tunnelManager: TunnelManager | null;
 
   private port: number;
   private host: string;
+  private webGui: boolean;
+  private httpServer: HttpServer | null = null;
 
   constructor(options: DoubltServerOptions = {}) {
     this.port = options.port ?? 9800;
     this.host = options.host ?? '0.0.0.0';
+    this.webGui = options.webGui ?? true;
 
     this.sessionManager = new SessionManager();
     this.connectionManager = new ConnectionManager();
@@ -98,6 +111,9 @@ export class DoubltServer {
     this.gitManager = new GitManager();
     this.costTracker = new CostTracker();
     this.searchManager = new SearchManager();
+    this.tunnelManager = options.tunnel && options.tunnel !== 'none'
+      ? new TunnelManager(options.tunnel)
+      : null;
     this.claudeRunner = new ClaudeSessionRunner(this.ptyManager, this.costTracker);
 
     this.wireUpEvents();
@@ -429,6 +445,36 @@ export class DoubltServer {
 
     // ─── PTY Events ────────────────────────────────────
 
+    // ─── Tunnel Events ──────────────────────────────────
+    if (this.tunnelManager) {
+      this.tunnelManager.on('tunnel:ready', (url: string) => {
+        this.connectionManager.broadcastToAll({
+          type: 'tunnel:status',
+          url,
+          provider: this.tunnelManager!.getProvider(),
+          status: 'active',
+        });
+      });
+
+      this.tunnelManager.on('tunnel:stopped', () => {
+        this.connectionManager.broadcastToAll({
+          type: 'tunnel:status',
+          url: '',
+          provider: this.tunnelManager!.getProvider(),
+          status: 'stopped',
+        });
+      });
+
+      this.tunnelManager.on('tunnel:error', (err: Error) => {
+        this.connectionManager.broadcastToAll({
+          type: 'tunnel:status',
+          url: '',
+          provider: this.tunnelManager!.getProvider(),
+          status: 'error',
+        });
+      });
+    }
+
     this.ptyManager.on('pty:exited', ({ sessionId, exitCode, signal }) => {
       this.connectionManager.broadcastToSession(sessionId, {
         type: 'notification',
@@ -475,7 +521,10 @@ export class DoubltServer {
         });
 
         // Spawn PTY for the session
-        this.ptyManager.spawn(session.id, { cwd: session.cwd }).catch(err => {
+        this.ptyManager.spawn(session.id, { cwd: session.cwd }).then(info => {
+          console.log(`[PTY] Spawned for session ${session.id} (pid: ${info.pid}, shell: ${info.shell})`);
+        }).catch(err => {
+          console.error(`[PTY] Failed to spawn for session ${session.id}:`, err.message);
           this.connectionManager.sendToClient(clientId, {
             type: 'notification',
             notification: {
@@ -507,6 +556,28 @@ export class DoubltServer {
             message: `Session ${msg.sessionId} not found`,
             sessionId: msg.sessionId,
           });
+        } else if (!this.ptyManager.isAlive(msg.sessionId)) {
+          // Auto-spawn PTY if session exists but has no active PTY
+          const session = this.sessionManager.get(msg.sessionId);
+          if (session) {
+            this.ptyManager.spawn(msg.sessionId, { cwd: session.cwd }).then(info => {
+              console.log(`[PTY] Auto-spawned on attach for session ${msg.sessionId} (pid: ${info.pid})`);
+            }).catch(err => {
+              console.error(`[PTY] Failed to auto-spawn on attach for session ${msg.sessionId}:`, err.message);
+              this.connectionManager.sendToClient(clientId, {
+                type: 'notification',
+                notification: {
+                  sessionId: msg.sessionId,
+                  type: 'error',
+                  title: 'PTY spawn failed',
+                  body: err.message,
+                  timestamp: Date.now(),
+                  priority: 'high',
+                  pushEnabled: true,
+                },
+              });
+            });
+          }
         }
         break;
       }
@@ -610,11 +681,16 @@ export class DoubltServer {
       // ─── Terminal sync messages ──────────────────────
 
       case 'terminal:input': {
-        // Route input to PTY if available, otherwise just relay
         if (this.ptyManager.isAlive(msg.input.sessionId)) {
+          // PTY is alive — write input directly, PTY handles echo
           this.ptyManager.write(msg.input.sessionId, msg.input.data);
+        } else {
+          // No PTY — relay input to other clients as echo (use real clientId for exclusion)
+          this.terminalSyncManager.handleInput({
+            ...msg.input,
+            sourceClientId: clientId,
+          });
         }
-        this.terminalSyncManager.handleInput(msg.input);
         break;
       }
 
@@ -986,10 +1062,43 @@ export class DoubltServer {
 
   async start(): Promise<void> {
     const serverToken = this.authManager.generateServerToken();
-    this.connectionManager.start(this.port);
+
+    if (this.webGui) {
+      // Create Express app for serving web GUI static files
+      const app = express();
+
+      // Resolve web dist path (relative to server package)
+      const currentDir = path.dirname(fileURLToPath(import.meta.url));
+      const webDistPath = path.resolve(currentDir, '../../web/dist');
+
+      if (existsSync(webDistPath)) {
+        app.use(express.static(webDistPath));
+        // SPA fallback — serve index.html for all non-file routes
+        app.get('*', (_req, res) => {
+          res.sendFile(path.join(webDistPath, 'index.html'));
+        });
+        console.log(`Web GUI serving from ${webDistPath}`);
+      } else {
+        app.get('/', (_req, res) => {
+          res.status(200).send('doublt-code server running. Build packages/web first: pnpm -C packages/web build');
+        });
+      }
+
+      this.httpServer = createServer(app);
+      this.connectionManager.startWithServer(this.httpServer);
+      await new Promise<void>((resolve, reject) => {
+        this.httpServer!.listen(this.port, this.host, () => resolve());
+        this.httpServer!.on('error', reject);
+      });
+    } else {
+      this.connectionManager.start(this.port);
+    }
 
     console.log(`doublt-code server started on port ${this.port}`);
     console.log(`Server token: ${serverToken}`);
+    if (this.webGui) {
+      console.log(`Web GUI: http://localhost:${this.port}`);
+    }
 
     // Try to restore previous state from disk
     const restored = await this.loadState();
@@ -1008,6 +1117,15 @@ export class DoubltServer {
       this.searchManager.indexSession(defaultSession.id, defaultSession.name, defaultSession.cwd);
     } else {
       console.log('Restored previous state from disk');
+    }
+
+    // Start tunnel if configured
+    if (this.tunnelManager) {
+      this.tunnelManager.start(this.port).then(url => {
+        console.log(`Tunnel active: ${url}`);
+      }).catch(err => {
+        console.warn(`Tunnel failed: ${err.message}`);
+      });
     }
 
     // Periodic cleanup + auto-save every 30s
@@ -1029,19 +1147,26 @@ export class DoubltServer {
       // Best-effort save on shutdown
     }
 
+    this.tunnelManager?.stop();
     this.claudeRunner.destroy();
     this.taskQueueManager.destroy();
     this.jsonStore.destroy();
     await this.ptyManager.killAll().catch(() => {});
     this.connectionManager.stop();
+    if (this.httpServer) {
+      this.httpServer.close();
+      this.httpServer = null;
+    }
   }
 
   /**
    * Get pairing info for mobile connection.
    */
-  getPairingInfo(): { url: string; code: string } {
+  getPairingInfo(): { url: string; code: string; tunnelUrl?: string; webUrl?: string } {
     const { url, code } = this.authManager.generatePairingUrl(this.host, this.port);
-    return { url, code };
+    const tunnelUrl = this.tunnelManager?.getUrl() ?? undefined;
+    const webUrl = this.webGui ? `http://localhost:${this.port}` : undefined;
+    return { url, code, tunnelUrl, webUrl };
   }
 }
 
@@ -1083,3 +1208,4 @@ export { DigestManager } from './digest/DigestManager.js';
 export { GitManager } from './git/GitManager.js';
 export { CostTracker } from './cost/CostTracker.js';
 export { SearchManager } from './search/SearchManager.js';
+export { TunnelManager } from './tunnel/TunnelManager.js';

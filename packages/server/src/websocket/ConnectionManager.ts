@@ -51,6 +51,30 @@ export class ConnectionManager extends EventEmitter {
     this.emit('server:started', { port });
   }
 
+  /**
+   * Attach WebSocket server to an existing HTTP server.
+   * Uses noServer mode to avoid conflicts with Express — only
+   * WebSocket upgrade requests are handled, regular HTTP goes to Express.
+   */
+  startWithServer(server: import('node:http').Server): void {
+    this.wss = new WebSocketServer({ noServer: true });
+
+    this.wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
+      this.handleNewConnection(ws, req);
+    });
+
+    // Manually handle HTTP upgrade so Express and WS don't conflict
+    server.on('upgrade', (req: IncomingMessage, socket: import('node:stream').Duplex, head: Buffer) => {
+      (this.wss as any).handleUpgrade(req, socket, head, (ws: WebSocket) => {
+        this.wss!.emit('connection', ws, req);
+      });
+    });
+
+    this.heartbeatInterval = setInterval(() => this.checkHeartbeats(), this.HEARTBEAT_INTERVAL);
+
+    this.emit('server:started', {});
+  }
+
   stop(): void {
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);

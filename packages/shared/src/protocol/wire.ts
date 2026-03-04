@@ -573,6 +573,15 @@ export interface ClaudeStatusResultMsg {
   }>;
 }
 
+// ─── Tunnel status messages (Server → Client) ────────────
+
+export interface TunnelStatusMsg {
+  type: 'tunnel:status';
+  url: string;
+  provider: string;
+  status: 'active' | 'stopped' | 'error';
+}
+
 export type ServerMessage =
   | AuthResultMsg
   | SessionCreatedMsg
@@ -620,7 +629,9 @@ export type ServerMessage =
   | TemplateCreatedMsg
   | TemplateUsedMsg
   // Claude session
-  | ClaudeStatusResultMsg;
+  | ClaudeStatusResultMsg
+  // Tunnel
+  | TunnelStatusMsg;
 
 // ─── Unified ─────────────────────────────────────────────────
 

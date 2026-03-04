@@ -1,6 +1,6 @@
 import React from 'react';
 import { ScrollView, TouchableOpacity, Text, StyleSheet, View } from 'react-native';
-import type { QuickAction, CommandMacro } from '@doublt/shared/src/types/quickaction.js';
+import type { QuickAction, CommandMacro } from '@doublt/shared';
 
 const DEFAULT_ACTIONS: QuickAction[] = [
   { id: 'qa-1', label: 'Run tests', icon: 'test', action: 'terminal_command', payload: 'npm test' },
