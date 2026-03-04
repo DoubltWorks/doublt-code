@@ -1,6 +1,8 @@
 import { EventEmitter } from 'events';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import path from 'path';
+import type { FSWatcher } from 'chokidar';
 import type { GitStatus, GitCommit, GitDiff, GitFileStatus, GitHunk } from '@doublt/shared';
 
 const execFileAsync = promisify(execFile);
@@ -18,7 +20,8 @@ const execFileAsync = promisify(execFile);
  * - git:new_commit({ sessionId, commit })
  */
 export class GitManager extends EventEmitter {
-  private watchedPaths = new Map<string, { sessionId: string; lastBranch: string | null }>();
+  private watchedPaths = new Map<string, { sessionId: string; lastBranch: string | null; lastCommitHash: string | null }>();
+  private fileWatchers = new Map<string, FSWatcher>();
   private pollInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
@@ -26,7 +29,12 @@ export class GitManager extends EventEmitter {
   }
 
   startWatching(sessionId: string, cwd: string): void {
-    this.watchedPaths.set(cwd, { sessionId, lastBranch: null });
+    this.watchedPaths.set(cwd, { sessionId, lastBranch: null, lastCommitHash: null });
+
+    // Start chokidar watcher on .git/HEAD and refs for instant detection
+    this.startFileWatcher(cwd);
+
+    // Keep polling as fallback (less frequent with file watcher active)
     if (!this.pollInterval) {
       this.pollInterval = setInterval(() => this.pollAll(), 10_000);
     }
@@ -34,9 +42,54 @@ export class GitManager extends EventEmitter {
 
   stopWatching(cwd: string): void {
     this.watchedPaths.delete(cwd);
+    const watcher = this.fileWatchers.get(cwd);
+    if (watcher) {
+      watcher.close();
+      this.fileWatchers.delete(cwd);
+    }
     if (this.watchedPaths.size === 0 && this.pollInterval) {
       clearInterval(this.pollInterval);
       this.pollInterval = null;
+    }
+  }
+
+  private async startFileWatcher(cwd: string): Promise<void> {
+    try {
+      const chokidar = await import('chokidar');
+      const gitDir = path.join(cwd, '.git');
+      const watcher = chokidar.watch(
+        [path.join(gitDir, 'HEAD'), path.join(gitDir, 'refs')],
+        { ignoreInitial: true, persistent: true },
+      );
+
+      watcher.on('change', () => this.onGitChange(cwd));
+      watcher.on('add', () => this.onGitChange(cwd));
+
+      this.fileWatchers.set(cwd, watcher);
+    } catch {
+      // chokidar not available or not a git repo — rely on polling
+    }
+  }
+
+  private async onGitChange(cwd: string): Promise<void> {
+    const info = this.watchedPaths.get(cwd);
+    if (!info) return;
+
+    try {
+      const status = await this.getStatus(cwd);
+      if (status.branch !== info.lastBranch) {
+        info.lastBranch = status.branch;
+        this.emit('git:status_changed', { sessionId: info.sessionId, status });
+      }
+
+      // Detect new commits
+      const log = await this.getLog(cwd, 1);
+      if (log.length > 0 && log[0].hash !== info.lastCommitHash) {
+        info.lastCommitHash = log[0].hash;
+        this.emit('git:new_commit', { sessionId: info.sessionId, commit: log[0] });
+      }
+    } catch {
+      // Not a git repo or git not available
     }
   }
 
@@ -154,6 +207,10 @@ export class GitManager extends EventEmitter {
       clearInterval(this.pollInterval);
       this.pollInterval = null;
     }
+    for (const watcher of this.fileWatchers.values()) {
+      watcher.close();
+    }
+    this.fileWatchers.clear();
     this.watchedPaths.clear();
   }
 }

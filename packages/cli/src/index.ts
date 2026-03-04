@@ -13,17 +13,175 @@
  * - Ctrl-b prefix keybindings (tmux-compatible)
  */
 
-import React from 'react';
-import { render } from 'ink';
 import { exec } from 'node:child_process';
 import { Command } from 'commander';
 import { DoubltServer } from '@doublt/server';
-import { PaneManager } from './cmux/PaneManager.js';
 import { ServerBridge } from './bridge/ServerBridge.js';
-import { App } from './tui/App.js';
 import type { ServerMessage } from '@doublt/shared';
 
 const program = new Command();
+
+// ─── Ctrl-b prefix mode keybinding handler ─────────────────
+
+interface RawTerminalContext {
+  bridge: ServerBridge;
+  server?: DoubltServer;
+  activeSessionId: string | null;
+  prefixMode: boolean;
+}
+
+function setupRawTerminal(ctx: RawTerminalContext): void {
+  const { bridge } = ctx;
+
+  // Enter raw mode
+  if (process.stdin.isTTY) {
+    process.stdin.setRawMode(true);
+  }
+  process.stdin.resume();
+  process.stdin.setEncoding('utf8');
+
+  // Single message handler for all server messages
+  bridge.on('message', (msg: ServerMessage) => {
+    switch (msg.type) {
+      case 'terminal:output':
+        process.stdout.write(msg.output.data);
+        break;
+      case 'terminal:scrollback:result':
+        process.stdout.write(msg.data);
+        break;
+      case 'session:created':
+        if (!ctx.activeSessionId) {
+          ctx.activeSessionId = msg.session.id;
+          bridge.attachSession(msg.session.id);
+          bridge.send({ type: 'terminal:scrollback:request', sessionId: msg.session.id });
+        }
+        break;
+    }
+  });
+
+  // Handle stdin → WebSocket → server PTY
+  process.stdin.on('data', (data: string) => {
+    // Ctrl-b prefix mode
+    if (data === '\x02') { // Ctrl-b
+      ctx.prefixMode = true;
+      return;
+    }
+
+    if (ctx.prefixMode) {
+      ctx.prefixMode = false;
+      handlePrefixKey(data, ctx);
+      return;
+    }
+
+    // Forward raw input to server PTY
+    if (ctx.activeSessionId) {
+      bridge.sendTerminalInput(ctx.activeSessionId, data);
+    }
+  });
+
+  // Send terminal size on connect and resize
+  const sendSize = () => {
+    if (ctx.activeSessionId && process.stdout.columns && process.stdout.rows) {
+      bridge.sendTerminalResize(ctx.activeSessionId, process.stdout.columns, process.stdout.rows);
+    }
+  };
+
+  bridge.on('connected', sendSize);
+  process.stdout.on('resize', sendSize);
+}
+
+function handlePrefixKey(key: string, ctx: RawTerminalContext): void {
+  const { bridge, server } = ctx;
+
+  switch (key) {
+    case 'c': // New session
+      bridge.createSession();
+      break;
+
+    case 'n': // Next session
+      bridge.listSessions();
+      // TODO: cycle to next session
+      break;
+
+    case 'p': // Previous session
+      bridge.listSessions();
+      // TODO: cycle to previous session
+      break;
+
+    case 'w': // List sessions
+      bridge.listSessions();
+      bridge.on('message', function onceList(msg: ServerMessage) {
+        if (msg.type === 'session:list:result') {
+          bridge.removeListener('message', onceList);
+          process.stdout.write('\r\n--- Sessions ---\r\n');
+          for (const s of msg.sessions) {
+            const marker = s.id === ctx.activeSessionId ? '*' : ' ';
+            process.stdout.write(`  ${marker} ${s.index}: ${s.name} [${s.status}]\r\n`);
+          }
+          process.stdout.write('----------------\r\n');
+        }
+      });
+      break;
+
+    case 'm': // Mobile pair
+      if (server) {
+        const pairing = server.authManager.generatePairingUrl('localhost', 9800);
+        process.stdout.write(`\r\nPairing code: ${pairing.code}\r\n`);
+        const tunnelUrl = server.tunnelManager?.getUrl();
+        if (tunnelUrl) {
+          process.stdout.write(`Tunnel URL: ${tunnelUrl}\r\n`);
+        }
+        process.stdout.write(`Pairing URL: ${pairing.url}\r\n`);
+      }
+      break;
+
+    case 'h': // Handoff
+      if (ctx.activeSessionId) {
+        bridge.triggerHandoff(ctx.activeSessionId);
+      }
+      break;
+
+    case 'd': // Detach
+      if (ctx.activeSessionId) {
+        bridge.detachSession(ctx.activeSessionId);
+      }
+      cleanup(ctx);
+      break;
+
+    case '?': // Help
+      process.stdout.write('\r\n--- doublt keybindings ---\r\n');
+      process.stdout.write('  Ctrl-b c   New session\r\n');
+      process.stdout.write('  Ctrl-b n   Next session\r\n');
+      process.stdout.write('  Ctrl-b p   Previous session\r\n');
+      process.stdout.write('  Ctrl-b w   List sessions\r\n');
+      process.stdout.write('  Ctrl-b m   Mobile pair\r\n');
+      process.stdout.write('  Ctrl-b h   Handoff\r\n');
+      process.stdout.write('  Ctrl-b d   Detach\r\n');
+      process.stdout.write('  Ctrl-b ?   This help\r\n');
+      process.stdout.write('-------------------------\r\n');
+      break;
+
+    default:
+      // Unknown prefix key — send Ctrl-b + key as-is
+      if (ctx.activeSessionId) {
+        bridge.sendTerminalInput(ctx.activeSessionId, '\x02' + key);
+      }
+      break;
+  }
+}
+
+async function cleanup(ctx: RawTerminalContext): Promise<void> {
+  if (process.stdin.isTTY) {
+    process.stdin.setRawMode(false);
+  }
+  ctx.bridge.disconnect();
+  if (ctx.server) {
+    await ctx.server.stop();
+  }
+  process.exit(0);
+}
+
+// ─── CLI Commands ──────────────────────────────────────────
 
 program
   .name('tt-code')
@@ -64,33 +222,29 @@ program
       deviceInfo: `cli-local-${process.pid}`,
     });
 
-    const paneManager = new PaneManager();
+    const ctx: RawTerminalContext = {
+      bridge,
+      server,
+      activeSessionId: null,
+      prefixMode: false,
+    };
 
     bridge.on('connected', () => {
-      bridge.listWorkspaces();
-      bridge.listSessions();
+      // Create default session with PTY
+      bridge.createSession('default');
     });
 
     bridge.connect();
 
-    // Render ink TUI
-    const inkApp = render(
-      React.createElement(App, { bridge, paneManager, server }),
-      { exitOnCtrlC: false },
-    );
+    // Setup raw terminal passthrough
+    setupRawTerminal(ctx);
 
     // Graceful shutdown
     const shutdown = async () => {
-      inkApp.unmount();
-      bridge.disconnect();
-      await server.stop();
-      process.exit(0);
+      await cleanup(ctx);
     };
     process.on('SIGINT', shutdown);
     process.on('SIGTERM', shutdown);
-
-    await inkApp.waitUntilExit();
-    await shutdown();
   });
 
 program
@@ -108,27 +262,36 @@ program
       token: opts.token,
     });
 
+    const ctx: RawTerminalContext = {
+      bridge,
+      activeSessionId: null,
+      prefixMode: false,
+    };
+
     bridge.on('connected', () => {
-      console.log(`Connected to ${url}`);
-      bridge.listWorkspaces();
       bridge.listSessions();
     });
 
-    bridge.on('message:workspace:list:result', (msg: ServerMessage & { type: 'workspace:list:result' }) => {
-      console.log('Workspaces:');
-      for (const ws of msg.workspaces) {
-        console.log(`  ${ws.index}: ${ws.name} [${ws.status}] (${ws.sessionCount} sessions, ${ws.activeSessionCount} active)`);
-      }
-    });
-
-    bridge.on('message:session:list:result', (msg: ServerMessage & { type: 'session:list:result' }) => {
-      console.log('Sessions:');
-      for (const s of msg.sessions) {
-        console.log(`  ${s.index}: ${s.name} [${s.status}] (${s.clientCount} clients)`);
+    // Attach to first available session
+    bridge.on('message', (msg: ServerMessage) => {
+      if (msg.type === 'session:list:result' && msg.sessions.length > 0 && !ctx.activeSessionId) {
+        ctx.activeSessionId = msg.sessions[0].id;
+        bridge.attachSession(msg.sessions[0].id);
+        bridge.send({ type: 'terminal:scrollback:request', sessionId: msg.sessions[0].id });
       }
     });
 
     bridge.connect();
+
+    // Setup raw terminal passthrough
+    setupRawTerminal(ctx);
+
+    // Graceful shutdown
+    const shutdown = async () => {
+      await cleanup(ctx);
+    };
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
   });
 
 program

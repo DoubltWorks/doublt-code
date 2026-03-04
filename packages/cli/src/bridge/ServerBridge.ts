@@ -249,4 +249,8 @@ export class ServerBridge extends EventEmitter {
       resize: { sessionId, cols, rows },
     });
   }
+
+  requestScrollback(sessionId: SessionId, offset?: number): void {
+    this.send({ type: 'terminal:scrollback:request', sessionId, offset });
+  }
 }

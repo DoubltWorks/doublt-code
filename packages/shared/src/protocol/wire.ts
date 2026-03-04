@@ -113,6 +113,14 @@ export interface TerminalResizeMsg {
   resize: TerminalResize;
 }
 
+// ─── Terminal scrollback messages (Client → Server) ───────────
+
+export interface TerminalScrollbackRequestMsg {
+  type: 'terminal:scrollback:request';
+  sessionId: SessionId;
+  offset?: number;
+}
+
 // ─── Push notification registration (Client → Server) ────────
 
 export interface PushRegisterMsg {
@@ -297,6 +305,7 @@ export type ClientMessage =
   | WorkspaceRenameMsg
   | TerminalInputMsg
   | TerminalResizeMsg
+  | TerminalScrollbackRequestMsg
   | PushRegisterMsg
   | PushUnregisterMsg
   // Approval policy
@@ -425,6 +434,16 @@ export interface TerminalOutputMsg {
 export interface TerminalResizedMsg {
   type: 'terminal:resized';
   resize: TerminalResize;
+}
+
+// ─── Terminal scrollback messages (Server → Client) ───────────
+
+export interface TerminalScrollbackResultMsg {
+  type: 'terminal:scrollback:result';
+  sessionId: SessionId;
+  data: string;
+  totalLines: number;
+  offset: number;
 }
 
 // ─── Long-running command tracking (Server → Client) ─────────
@@ -599,6 +618,7 @@ export type ServerMessage =
   | WorkspaceDeletedMsg
   | TerminalOutputMsg
   | TerminalResizedMsg
+  | TerminalScrollbackResultMsg
   | CommandStatusMsg
   // Approval policy
   | PolicyResultMsg

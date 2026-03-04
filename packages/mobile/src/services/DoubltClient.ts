@@ -179,6 +179,9 @@ export class DoubltClient extends EventEmitter {
       case 'terminal:output':
         this.emit('terminalOutput', msg.output);
         break;
+      case 'terminal:scrollback:result':
+        this.emit('scrollbackResult', { sessionId: msg.sessionId, data: msg.data, totalLines: msg.totalLines, offset: msg.offset });
+        break;
       case 'terminal:resized':
         this.emit('terminalResized', msg.resize);
         break;

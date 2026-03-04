@@ -225,6 +225,18 @@ export function useDoublt() {
       });
     });
 
+    // ─── Scrollback sync events ──────────────────────
+
+    client.on('scrollbackResult', ({ sessionId, data }: { sessionId: string; data: string }) => {
+      setState(prev => {
+        const terminalOutput = new Map(prev.terminalOutput);
+        const existing = terminalOutput.get(sessionId) ?? '';
+        const updated = (data + existing).slice(-50_000);
+        terminalOutput.set(sessionId, updated);
+        return { ...prev, terminalOutput };
+      });
+    });
+
     // ─── Command tracking events ──────────────────────
 
     client.on('commandStatus', (command: LongRunningCommand) => {

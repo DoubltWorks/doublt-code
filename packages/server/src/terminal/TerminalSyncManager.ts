@@ -35,7 +35,11 @@ export class TerminalSyncManager extends EventEmitter {
 
   /** Terminal output buffer per session (last N chunks for late-joining clients) */
   private outputBuffers = new Map<SessionId, TerminalOutput[]>();
-  private readonly maxBufferSize = 200;
+  private readonly maxBufferSize = 1000;
+
+  /** Scrollback line buffer per session (raw text, 1000 lines max) */
+  private scrollbackBuffers = new Map<SessionId, string[]>();
+  private readonly maxScrollbackLines = 1000;
 
   /**
    * Process terminal output from a client and broadcast to all others.
@@ -59,6 +63,21 @@ export class TerminalSyncManager extends EventEmitter {
       buffer.splice(0, buffer.length - this.maxBufferSize);
     }
     this.outputBuffers.set(sessionId, buffer);
+
+    // Maintain scrollback line buffer (strip \r for clean line counting)
+    const lines = this.scrollbackBuffers.get(sessionId) ?? [];
+    const newLines = data.split('\n').map(l => l.replace(/\r/g, ''));
+    if (lines.length > 0 && newLines.length > 0) {
+      // Append first fragment to last incomplete line
+      lines[lines.length - 1] += newLines[0];
+      lines.push(...newLines.slice(1));
+    } else {
+      lines.push(...newLines);
+    }
+    if (lines.length > this.maxScrollbackLines) {
+      lines.splice(0, lines.length - this.maxScrollbackLines);
+    }
+    this.scrollbackBuffers.set(sessionId, lines);
 
     this.emit('terminal:output', output);
     return output;
@@ -84,6 +103,21 @@ export class TerminalSyncManager extends EventEmitter {
    */
   getBufferedOutput(sessionId: SessionId): TerminalOutput[] {
     return this.outputBuffers.get(sessionId) ?? [];
+  }
+
+  /**
+   * Get scrollback buffer for a session (for session attach / reconnect).
+   * Returns { data, totalLines, offset } for paginated scrollback.
+   */
+  getScrollback(sessionId: SessionId, offset = 0): { data: string; totalLines: number; offset: number } {
+    const lines = this.scrollbackBuffers.get(sessionId) ?? [];
+    const totalLines = lines.length;
+    const sliced = lines.slice(offset);
+    return {
+      data: sliced.join('\n'),
+      totalLines,
+      offset,
+    };
   }
 
   /**
@@ -169,6 +203,7 @@ export class TerminalSyncManager extends EventEmitter {
    */
   cleanupSession(sessionId: SessionId): void {
     this.outputBuffers.delete(sessionId);
+    this.scrollbackBuffers.delete(sessionId);
     this.chunkCounters.delete(sessionId);
     this.terminalSizes.delete(sessionId);
     for (const [id, cmd] of this.runningCommands) {

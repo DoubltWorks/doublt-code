@@ -10,7 +10,7 @@ await build({
   external: [
     'node:*',
     'node-pty',
-    'ws', 'express', 'commander', 'ink',
-    'react',
+    'ws', 'express', 'commander',
+    'chokidar', 'fsevents',
   ],
 });

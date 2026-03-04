@@ -703,6 +703,29 @@ export class DoubltServer {
         break;
       }
 
+      case 'terminal:scrollback:request': {
+        // Verify client is attached to this session before serving scrollback
+        const sbClients = this.sessionManager.getSessionClients(msg.sessionId);
+        if (!sbClients.some(c => c.id === clientId)) {
+          this.connectionManager.sendToClient(clientId, {
+            type: 'error',
+            code: 'NOT_ATTACHED',
+            message: 'Must be attached to session to request scrollback',
+            sessionId: msg.sessionId,
+          });
+          break;
+        }
+        const scrollback = this.terminalSyncManager.getScrollback(msg.sessionId, msg.offset);
+        this.connectionManager.sendToClient(clientId, {
+          type: 'terminal:scrollback:result',
+          sessionId: msg.sessionId,
+          data: scrollback.data,
+          totalLines: scrollback.totalLines,
+          offset: scrollback.offset,
+        });
+        break;
+      }
+
       // ─── Push notification registration ──────────────
 
       case 'push:register': {
