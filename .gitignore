@@ -5,4 +5,5 @@ dist/
 .expo/
 HANDOFF.md
 coverage/
+web-dist/
 .omc/

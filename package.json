@@ -1,33 +1,74 @@
 {
-  "name": "doublt-code",
+  "name": "@doubltworks/tt-code",
   "version": "0.1.0",
-  "private": true,
-  "description": "Multi-session coding bridge with mobile sync — inspired by Happy Coder, powered by cmux-style session management",
-  "workspaces": [
-    "packages/*"
+  "description": "Multi-session coding bridge with mobile sync — cmux-style session management",
+  "type": "module",
+  "bin": {
+    "tt-code": "./dist/index.js"
+  },
+  "files": [
+    "dist/",
+    "web-dist/",
+    "scripts/"
   ],
   "scripts": {
-    "build": "npm run build --workspaces",
+    "build:shared": "npm run build -w packages/shared",
+    "build:server": "npm run build -w packages/server",
+    "build:cli": "npm run build -w packages/cli",
+    "build:web": "npm run build -w packages/web",
+    "build:bundle": "node esbuild.config.mjs",
+    "build:web-dist": "rm -rf web-dist && cp -r packages/web/dist web-dist",
+    "build": "npm run build:shared && npm run build:server && npm run build:cli && npm run build:web && npm run build:bundle && npm run build:web-dist",
     "dev:server": "npm run dev -w packages/server",
     "dev:cli": "npm run dev -w packages/cli",
     "test": "vitest run --workspace vitest.workspace.ts",
     "test:watch": "vitest --workspace vitest.workspace.ts",
     "test:coverage": "vitest run --workspace vitest.workspace.ts --coverage",
-    "lint": "eslint packages/*/src/**/*.ts"
+    "lint": "eslint packages/*/src/**/*.ts",
+    "prepublishOnly": "npm run build",
+    "postinstall": "node scripts/postinstall.mjs || true"
   },
   "engines": {
     "node": ">=20.0.0"
   },
+  "workspaces": [
+    "packages/*"
+  ],
+  "dependencies": {
+    "commander": "^12.0.0",
+    "express": "^4.18.0",
+    "ink": "^5.0.0",
+    "react": "^18.3.1",
+    "ws": "^8.16.0"
+  },
+  "optionalDependencies": {
+    "node-pty": "^1.1.0"
+  },
   "devDependencies": {
+    "@types/express": "^4.17.0",
     "@types/node": "^20.11.0",
+    "@types/react": "~18.3.0",
+    "@types/ws": "^8.5.0",
     "@vitest/coverage-v8": "^3.0.0",
+    "esbuild": "^0.24.2",
     "eslint": "^9.0.0",
     "tsx": "^4.7.0",
     "typescript": "^5.5.0",
     "vitest": "^3.0.0"
   },
-  "dependencies": {
-    "cli": "link:../../../Library/pnpm/global/5/node_modules/packages/cli",
-    "node-pty": "^1.1.0"
+  "keywords": [
+    "terminal",
+    "multiplexer",
+    "mobile",
+    "coding",
+    "bridge"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DoubltWorks/doublt-code.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
   }
 }

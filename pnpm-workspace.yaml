@@ -1,5 +1,2 @@
 packages:
   - packages/*
-
-overrides:
-  cli: link:../../../Library/pnpm/global/5/node_modules/packages/cli

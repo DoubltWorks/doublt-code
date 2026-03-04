@@ -1067,9 +1067,11 @@ export class DoubltServer {
       // Create Express app for serving web GUI static files
       const app = express();
 
-      // Resolve web dist path (relative to server package)
+      // Resolve web dist path — dev (packages/server → ../../web/dist) or bundle (dist/ → ../web-dist)
       const currentDir = path.dirname(fileURLToPath(import.meta.url));
-      const webDistPath = path.resolve(currentDir, '../../web/dist');
+      const devPath = path.resolve(currentDir, '../../web/dist');
+      const bundlePath = path.resolve(currentDir, '../web-dist');
+      const webDistPath = existsSync(devPath) ? devPath : bundlePath;
 
       if (existsSync(webDistPath)) {
         app.use(express.static(webDistPath));
@@ -1080,7 +1082,7 @@ export class DoubltServer {
         console.log(`Web GUI serving from ${webDistPath}`);
       } else {
         app.get('/', (_req, res) => {
-          res.status(200).send('doublt-code server running. Build packages/web first: pnpm -C packages/web build');
+          res.status(200).send('tt-code server running. Web GUI files not found. Try reinstalling: npm install -g tt-code');
         });
       }
 

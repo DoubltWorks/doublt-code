@@ -26,13 +26,13 @@ import type { ServerMessage } from '@doublt/shared';
 const program = new Command();
 
 program
-  .name('doublt')
-  .description('doubltmux — Multi-session coding bridge with mobile sync')
+  .name('tt-code')
+  .description('tt-code — Multi-session coding bridge with mobile sync')
   .version('0.1.0');
 
 program
   .command('start')
-  .description('Start the doublt server and open default workspace + session')
+  .description('Start the tt-code server and open default workspace + session')
   .option('-p, --port <port>', 'Server port', '9800')
   .option('-n, --name <name>', 'Workspace name', 'default')
   .option('--tunnel <provider>', 'Tunnel provider (cloudflare)', 'none')
@@ -95,7 +95,7 @@ program
 
 program
   .command('connect <url>')
-  .description('Connect to a running doublt server')
+  .description('Connect to a running tt-code server')
   .option('-t, --token <token>', 'Authentication token')
   .action(async (url: string, opts: { token?: string }) => {
     if (!opts.token) {
@@ -135,7 +135,7 @@ program
   .command('pair')
   .description('Generate mobile pairing QR code')
   .action(() => {
-    console.log('Start the server first with "doublt start", then use Ctrl-b m to pair.');
+    console.log('Start the server first with "tt-code start", then use Ctrl-b m to pair.');
   });
 
 program.parse();
