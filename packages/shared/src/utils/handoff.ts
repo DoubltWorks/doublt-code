@@ -22,6 +22,10 @@ export interface HandoffData {
   blockers: string[];
   /** Free-form context that should carry over */
   additionalContext: string;
+  /** Pending tasks from task queue (Unit 2) */
+  pendingTasks?: Array<{ id: string; title: string; priority: string }>;
+  /** Git context at time of handoff (Unit 5) */
+  gitContext?: { branch: string; recentCommits: string[] };
 }
 
 const HANDOFF_HEADER = '# Session Handoff';

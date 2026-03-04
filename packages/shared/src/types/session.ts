@@ -30,6 +30,8 @@ export interface Session {
   parentSessionId?: SessionId;
   /** HANDOFF.md content that seeded this session */
   handoffContext?: string;
+  /** Workspace this session belongs to */
+  workspaceId?: string;
 }
 
 export interface ConnectedClient {
@@ -44,6 +46,8 @@ export interface ConnectedClient {
 export interface SessionCreateOptions {
   name?: string;
   cwd?: string;
+  /** Workspace to create this session in */
+  workspaceId?: string;
   /** Create from a handoff — carries context from parent session */
   fromHandoff?: {
     parentSessionId: SessionId;
@@ -61,4 +65,6 @@ export interface SessionListItem {
   cwd: string;
   /** Visual indicator like tmux window numbers */
   index: number;
+  /** Workspace this session belongs to */
+  workspaceId?: string;
 }

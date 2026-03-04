@@ -2,6 +2,7 @@
   "name": "@doublt/cli",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "bin": {
     "doublt": "./dist/index.js",
     "cmux": "./dist/cmux/index.js"
@@ -12,16 +13,19 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@doublt/shared": "*",
+    "@doublt/shared": "workspace:*",
+    "@doublt/server": "workspace:*",
     "ws": "^8.16.0",
-    "blessed": "^0.1.81",
     "commander": "^12.0.0",
     "chalk": "^5.3.0",
-    "qrcode-terminal": "^0.12.0"
+    "qrcode-terminal": "^0.12.0",
+    "ink": "^5.0.0",
+    "ink-text-input": "^6.0.0",
+    "react": "^18.3.1"
   },
   "devDependencies": {
+    "@types/react": "~18.3.0",
     "@types/ws": "^8.5.0",
-    "@types/blessed": "^0.1.25",
     "typescript": "^5.5.0",
     "tsx": "^4.7.0"
   }

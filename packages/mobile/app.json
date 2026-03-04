@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "doublt",
+    "slug": "doublt",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "doublt",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0f172a"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.doublt.mobile"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#0f172a"
+      },
+      "package": "com.doublt.mobile"
+    },
+    "newArchEnabled": true
+  }
+}

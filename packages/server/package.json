@@ -2,14 +2,18 @@
   "name": "@doublt/server",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "main": "./dist/index.js",
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@doublt/shared": "*",
+    "@doublt/shared": "workspace:*",
     "ws": "^8.16.0",
     "express": "^4.18.0",
     "nanoid": "^5.0.0",

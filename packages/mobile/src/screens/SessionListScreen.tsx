@@ -1,13 +1,14 @@
 /**
- * SessionListScreen — Shows all active sessions (cmux-style).
+ * SessionListScreen — Shows sessions within a workspace (cmux-style).
  *
  * Displays sessions in a list with:
  * - Session name and status
  * - Context usage bar
- * - Connected client count (shows if PC is also connected)
+ * - Connected client count
  * - Last activity time
+ * - Access to terminal view
  *
- * Tap a session to open it. Long press for options (handoff, kill, rename).
+ * Tap a session to open chat. Long press for terminal view.
  */
 
 import React from 'react';
@@ -18,14 +19,21 @@ import {
   TouchableOpacity,
   StyleSheet,
 } from 'react-native';
-import type { SessionListItem, SessionId } from '@doublt/shared';
+import type { SessionListItem, SessionId, WorkspaceListItem, GitStatus } from '@doublt/shared';
+import { GitStatusBadge } from '../components/GitStatusBadge';
 
 interface Props {
   sessions: SessionListItem[];
   activeSessionId: SessionId | null;
+  activeWorkspace: WorkspaceListItem | null;
   onSelectSession: (id: SessionId) => void;
+  onOpenTerminal: (id: SessionId) => void;
   onHandoff: (id: SessionId) => void;
+  onCreateSession: () => void;
+  onBack: () => void;
   connectionState: string;
+  gitStatus?: Map<SessionId, GitStatus>;
+  onOpenGitStatus?: (id: SessionId) => void;
 }
 
 function ContextBar({ usage }: { usage: number }) {
@@ -47,11 +55,13 @@ function SessionItem({
   isActive,
   onPress,
   onLongPress,
+  onTerminal,
 }: {
   session: SessionListItem;
   isActive: boolean;
   onPress: () => void;
   onLongPress: () => void;
+  onTerminal: () => void;
 }) {
   const statusColors: Record<string, string> = {
     active: '#22c55e',
@@ -72,11 +82,17 @@ function SessionItem({
           <Text style={styles.sessionIndex}>{session.index}</Text>
           <Text style={styles.sessionName}>{session.name}</Text>
         </View>
-        {session.clientCount > 1 && (
-          <Text style={styles.clientBadge}>{session.clientCount} devices</Text>
-        )}
+        <View style={styles.sessionActions}>
+          {session.clientCount > 1 && (
+            <Text style={styles.clientBadge}>{session.clientCount} devices</Text>
+          )}
+          <TouchableOpacity style={styles.terminalButton} onPress={onTerminal}>
+            <Text style={styles.terminalButtonText}>{'>'}_</Text>
+          </TouchableOpacity>
+        </View>
       </View>
       <ContextBar usage={session.contextUsage} />
+      <GitStatusBadge gitStatus={null} />
       <Text style={styles.sessionCwd}>{session.cwd}</Text>
       <Text style={styles.lastActivity}>
         {formatTimeAgo(session.lastActivityAt)}
@@ -88,14 +104,30 @@ function SessionItem({
 export function SessionListScreen({
   sessions,
   activeSessionId,
+  activeWorkspace,
   onSelectSession,
+  onOpenTerminal,
   onHandoff,
+  onCreateSession,
+  onBack,
   connectionState,
+  gitStatus,
+  onOpenGitStatus,
 }: Props) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Sessions</Text>
+        <TouchableOpacity onPress={onBack} style={styles.backButton}>
+          <Text style={styles.backText}>{'<'}</Text>
+        </TouchableOpacity>
+        <View style={styles.headerInfo}>
+          <Text style={styles.title}>
+            {activeWorkspace?.name ?? 'Sessions'}
+          </Text>
+          <Text style={styles.subtitle}>
+            {sessions.length} session{sessions.length !== 1 ? 's' : ''}
+          </Text>
+        </View>
         <View style={styles.connectionStatus}>
           <View
             style={[
@@ -116,15 +148,20 @@ export function SessionListScreen({
             isActive={item.id === activeSessionId}
             onPress={() => onSelectSession(item.id)}
             onLongPress={() => onHandoff(item.id)}
+            onTerminal={() => onOpenTerminal(item.id)}
           />
         )}
         contentContainerStyle={styles.list}
         ListEmptyComponent={
           <Text style={styles.emptyText}>
-            No active sessions. Start doublt on your PC first.
+            No sessions in this workspace yet.
           </Text>
         }
       />
+
+      <TouchableOpacity style={styles.createButton} onPress={onCreateSession}>
+        <Text style={styles.createButtonText}>+ New Session</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -141,14 +178,17 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a' },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     padding: 16,
     paddingTop: 60,
     borderBottomWidth: 1,
     borderBottomColor: '#1e293b',
   },
-  title: { fontSize: 24, fontWeight: 'bold', color: '#f8fafc' },
+  backButton: { padding: 8, marginRight: 8 },
+  backText: { color: '#3b82f6', fontSize: 20 },
+  headerInfo: { flex: 1 },
+  title: { fontSize: 20, fontWeight: 'bold', color: '#f8fafc' },
+  subtitle: { color: '#94a3b8', fontSize: 12, marginTop: 2 },
   connectionStatus: { flexDirection: 'row', alignItems: 'center' },
   connectionDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
   connectionText: { color: '#94a3b8', fontSize: 12 },
@@ -175,6 +215,7 @@ const styles = StyleSheet.create({
   statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
   sessionIndex: { color: '#64748b', fontSize: 14, marginRight: 8, fontFamily: 'monospace' },
   sessionName: { color: '#f8fafc', fontSize: 16, fontWeight: '600' },
+  sessionActions: { flexDirection: 'row', alignItems: 'center' },
   clientBadge: {
     backgroundColor: '#3b82f6',
     color: '#fff',
@@ -183,6 +224,19 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     fontSize: 11,
     overflow: 'hidden',
+    marginRight: 8,
+  },
+  terminalButton: {
+    backgroundColor: '#334155',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  terminalButtonText: {
+    color: '#22c55e',
+    fontSize: 14,
+    fontFamily: 'monospace',
+    fontWeight: 'bold',
   },
   contextBarContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
   contextBarBg: {
@@ -197,4 +251,12 @@ const styles = StyleSheet.create({
   sessionCwd: { color: '#64748b', fontSize: 12, fontFamily: 'monospace', marginBottom: 4 },
   lastActivity: { color: '#475569', fontSize: 11 },
   emptyText: { color: '#64748b', textAlign: 'center', marginTop: 40, fontSize: 14 },
+  createButton: {
+    backgroundColor: '#3b82f6',
+    margin: 16,
+    padding: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  createButtonText: { color: '#fff', fontSize: 15, fontWeight: '600' },
 });

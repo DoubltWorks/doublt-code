@@ -1,0 +1,9 @@
+packages/*/src/
+packages/*/tsconfig.json
+packages/mobile/
+vitest.workspace.ts
+esbuild.config.mjs
+pnpm-workspace.yaml
+pnpm-lock.yaml
+.claude/
+.omc/

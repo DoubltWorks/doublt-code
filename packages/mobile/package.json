@@ -10,14 +10,20 @@
     "build": "echo 'Use expo build'"
   },
   "dependencies": {
-    "@doublt/shared": "*",
+    "@doublt/shared": "workspace:*",
+    "@react-navigation/native": "^7.0.0",
+    "@react-navigation/native-stack": "^7.0.0",
+    "events": "^3.3.0",
     "expo": "~52.0.0",
+    "expo-clipboard": "~7.0.0",
     "react": "18.3.1",
     "react-native": "0.76.0",
+    "react-native-gesture-handler": "~2.20.0",
     "react-native-safe-area-context": "^4.8.0",
-    "expo-clipboard": "~7.0.0"
+    "react-native-screens": "~4.4.0"
   },
   "devDependencies": {
+    "@babel/core": "^7.25.0",
     "@types/react": "~18.3.0",
     "typescript": "^5.5.0"
   }
