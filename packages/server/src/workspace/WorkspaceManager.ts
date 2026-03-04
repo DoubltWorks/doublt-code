@@ -19,6 +19,7 @@ import type {
   WorkspaceStatus,
 } from '@doublt/shared';
 import type { SessionManager } from '../session/SessionManager.js';
+import type { JsonStore } from '../storage/JsonStore.js';
 
 export class WorkspaceManager extends EventEmitter {
   private workspaces = new Map<WorkspaceId, Workspace>();
@@ -150,6 +151,25 @@ export class WorkspaceManager extends EventEmitter {
       this.workspaces.set(workspace.id, { ...workspace });
       this.nextIndex++;
     }
+  }
+
+  /**
+   * Debounced save of all workspaces to JsonStore.
+   */
+  save(store: JsonStore): void {
+    store.scheduleSave('workspaces.json', this.listAllWorkspaces());
+  }
+
+  /**
+   * Load workspaces from JsonStore and restore state.
+   */
+  async load(store: JsonStore): Promise<boolean> {
+    const workspaces = await store.load<Workspace[]>('workspaces.json');
+    if (workspaces?.length) {
+      this.restoreWorkspaces(workspaces);
+      return true;
+    }
+    return false;
   }
 
   /** Get all sessions for a workspace */

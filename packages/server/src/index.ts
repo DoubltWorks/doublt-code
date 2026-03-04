@@ -56,7 +56,7 @@ import { GitManager } from './git/GitManager.js';
 import { CostTracker } from './cost/CostTracker.js';
 import { SearchManager } from './search/SearchManager.js';
 import { TunnelManager } from './tunnel/TunnelManager.js';
-import type { ClientMessage, ServerMessage, GitStatus, GitCommit, GitDiff, Session, Workspace, Task, ApprovalPolicy } from '@doublt/shared';
+import type { ClientMessage, ServerMessage, GitStatus, GitCommit, GitDiff, Session, Workspace, Task, ApprovalPolicy, ActivityEvent } from '@doublt/shared';
 
 export interface DoubltServerOptions {
   port?: number;
@@ -490,6 +490,55 @@ export class DoubltServer {
       });
       this.digestManager.logEvent('command', sessionId, `PTY exited (code ${exitCode})`);
     });
+
+    // ─── Debounced Auto-Persistence + DigestManager Logging ─
+    // Each state change triggers a debounced save via JsonStore (1s debounce)
+    // and logs to DigestManager where appropriate.
+
+    this.sessionManager.on('session:created', (session) => {
+      this.digestManager.logEvent('message', session.id, `Session created: ${session.name}`);
+      this.sessionManager.save(this.jsonStore);
+    });
+    this.sessionManager.on('session:updated', (session) => {
+      if (session.status === 'archived') {
+        this.digestManager.logEvent('message', session.id, `Session archived: ${session.name}`);
+      }
+      this.sessionManager.save(this.jsonStore);
+    });
+
+    this.workspaceManager.on('workspace:created', () => {
+      this.workspaceManager.save(this.jsonStore);
+    });
+    this.workspaceManager.on('workspace:updated', () => {
+      this.workspaceManager.save(this.jsonStore);
+    });
+    this.workspaceManager.on('workspace:deleted', () => {
+      this.workspaceManager.save(this.jsonStore);
+    });
+
+    this.taskQueueManager.on('task:created', () => {
+      this.taskQueueManager.save(this.jsonStore);
+    });
+    this.taskQueueManager.on('task:started', () => {
+      this.taskQueueManager.save(this.jsonStore);
+    });
+    this.taskQueueManager.on('task:completed', () => {
+      this.taskQueueManager.save(this.jsonStore);
+    });
+    this.taskQueueManager.on('task:failed', () => {
+      this.taskQueueManager.save(this.jsonStore);
+    });
+    this.taskQueueManager.on('task:cancelled', () => {
+      this.taskQueueManager.save(this.jsonStore);
+    });
+
+    this.approvalManager.on('policy:updated', () => {
+      this.approvalManager.save(this.jsonStore);
+    });
+
+    this.digestManager.on('event:logged', () => {
+      this.digestManager.save(this.jsonStore);
+    });
   }
 
   private handleClientMessage(clientId: string, msg: ClientMessage): void {
@@ -541,7 +590,7 @@ export class DoubltServer {
 
         // Index session for search
         this.searchManager.indexSession(session.id, session.name, session.cwd);
-        this.digestManager.logEvent('message', session.id, `Session created: ${session.name}`);
+        // session:created event listener handles DigestManager logging
         break;
       }
 
@@ -1045,14 +1094,19 @@ export class DoubltServer {
     const sessions = this.sessionManager.listAll();
     const workspaces = this.workspaceManager.listAllWorkspaces();
     const tasks = this.taskQueueManager.listTasks();
-    const policies = this.approvalManager.listPolicies();
+    const digestEvents = this.digestManager.getAllEvents();
+    const scrollbacks = this.terminalSyncManager.getScrollbackMap(500);
 
     await Promise.all([
       this.jsonStore.save('sessions.json', sessions),
       this.jsonStore.save('workspaces.json', workspaces),
       this.jsonStore.save('tasks.json', tasks),
-      this.jsonStore.save('policies.json', policies),
+      this.jsonStore.save('digest.json', digestEvents),
+      this.jsonStore.save('scrollback.json', scrollbacks),
     ]);
+    // Policies saved via manager (includes activePolicyId)
+    this.approvalManager.save(this.jsonStore);
+    await this.jsonStore.flush();
   }
 
   /**
@@ -1060,27 +1114,25 @@ export class DoubltServer {
    * Returns true if any state was restored.
    */
   async loadState(): Promise<boolean> {
-    const [sessions, workspaces, tasks, policies] = await Promise.all([
-      this.jsonStore.load<Session[]>('sessions.json'),
-      this.jsonStore.load<Workspace[]>('workspaces.json'),
-      this.jsonStore.load<Task[]>('tasks.json'),
-      this.jsonStore.load<ApprovalPolicy[]>('policies.json'),
+    await this.jsonStore.init();
+
+    // Use manager-level load for policies (handles activePolicyId + backward compat)
+    const [sessionRestored, workspaceRestored, taskRestored, policyRestored, digestRestored] = await Promise.all([
+      this.sessionManager.load(this.jsonStore),
+      this.workspaceManager.load(this.jsonStore),
+      this.taskQueueManager.load(this.jsonStore),
+      this.approvalManager.load(this.jsonStore),
+      this.digestManager.load(this.jsonStore),
     ]);
 
-    let restored = false;
-    if (sessions?.length) { this.sessionManager.restoreSessions(sessions); restored = true; }
-    if (workspaces?.length) { this.workspaceManager.restoreWorkspaces(workspaces); restored = true; }
-    if (tasks?.length) { this.taskQueueManager.restoreTasks(tasks); restored = true; }
-    if (policies?.length) { this.approvalManager.restorePolicies(policies); restored = true; }
+    const scrollbacks = await this.jsonStore.load<Record<string, string[]>>('scrollback.json');
+    let scrollbackRestored = false;
+    if (scrollbacks && Object.keys(scrollbacks).length) {
+      this.terminalSyncManager.restoreScrollback(scrollbacks);
+      scrollbackRestored = true;
+    }
 
-    return restored;
-  }
-
-  /**
-   * Schedule debounced state persistence on any state change.
-   */
-  private scheduleSave(filename: string, getData: () => unknown): void {
-    this.jsonStore.scheduleSave(filename, getData());
+    return sessionRestored || workspaceRestored || taskRestored || policyRestored || digestRestored || scrollbackRestored;
   }
 
   async start(): Promise<void> {

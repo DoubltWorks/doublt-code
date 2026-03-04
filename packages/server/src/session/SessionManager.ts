@@ -19,6 +19,7 @@ import type {
   SessionListItem,
   SessionStatus,
 } from '@doublt/shared';
+import type { JsonStore } from '../storage/JsonStore.js';
 
 export class SessionManager extends EventEmitter {
   private sessions = new Map<SessionId, Session>();
@@ -193,6 +194,25 @@ export class SessionManager extends EventEmitter {
       // Keep nextIndex beyond the highest restored session index
       this.nextIndex++;
     }
+  }
+
+  /**
+   * Debounced save of all sessions to JsonStore.
+   */
+  save(store: JsonStore): void {
+    store.scheduleSave('sessions.json', this.listAll());
+  }
+
+  /**
+   * Load sessions from JsonStore and restore state.
+   */
+  async load(store: JsonStore): Promise<boolean> {
+    const sessions = await store.load<Session[]>('sessions.json');
+    if (sessions?.length) {
+      this.restoreSessions(sessions);
+      return true;
+    }
+    return false;
   }
 
   /**

@@ -8,6 +8,7 @@ import type {
   ApprovalAction,
   ApprovalPreset,
 } from '@doublt/shared';
+import type { JsonStore } from '../storage/JsonStore.js';
 
 function generateId(): string {
   return crypto.randomUUID().slice(0, 8);
@@ -169,6 +170,42 @@ export class ApprovalPolicyManager extends EventEmitter {
     for (const policy of policies) {
       this.policies.set(policy.id, { ...policy });
     }
+  }
+
+  /**
+   * Debounced save of all policies + active policy ID to JsonStore.
+   */
+  save(store: JsonStore): void {
+    store.scheduleSave('policies.json', {
+      policies: this.listPolicies(),
+      activePolicyId: this.activePolicyId,
+    });
+  }
+
+  /**
+   * Load policies from JsonStore and restore state (including active policy).
+   */
+  async load(store: JsonStore): Promise<boolean> {
+    const data = await store.load<{ policies: ApprovalPolicy[]; activePolicyId?: string | null } | ApprovalPolicy[]>('policies.json');
+    if (!data) return false;
+
+    // Support both old format (plain array) and new format ({ policies, activePolicyId })
+    if (Array.isArray(data)) {
+      if (data.length) {
+        this.restorePolicies(data);
+        return true;
+      }
+      return false;
+    }
+
+    if (data.policies?.length) {
+      this.restorePolicies(data.policies);
+      if (data.activePolicyId && this.policies.has(data.activePolicyId)) {
+        this.activePolicyId = data.activePolicyId;
+      }
+      return true;
+    }
+    return false;
   }
 
   applyPreset(preset: ApprovalPreset): ApprovalPolicy {

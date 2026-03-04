@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import crypto from 'crypto';
 import type { Task, TaskPriority, ScheduledTask } from '@doublt/shared';
+import type { JsonStore } from '../storage/JsonStore.js';
 
 const PRIORITY_ORDER: Record<TaskPriority, number> = {
   critical: 0,
@@ -168,6 +169,25 @@ export class TaskQueueManager extends EventEmitter {
     for (const task of tasks) {
       this.tasks.set(task.id, { ...task });
     }
+  }
+
+  /**
+   * Debounced save of all tasks to JsonStore.
+   */
+  save(store: JsonStore): void {
+    store.scheduleSave('tasks.json', this.listTasks());
+  }
+
+  /**
+   * Load tasks from JsonStore and restore state.
+   */
+  async load(store: JsonStore): Promise<boolean> {
+    const tasks = await store.load<Task[]>('tasks.json');
+    if (tasks?.length) {
+      this.restoreTasks(tasks);
+      return true;
+    }
+    return false;
   }
 
   destroy(): void {

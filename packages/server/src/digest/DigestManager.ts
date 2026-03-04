@@ -17,6 +17,7 @@ import type {
   HistoryPage,
   TimelineEntry,
 } from '@doublt/shared';
+import type { JsonStore } from '../storage/JsonStore.js';
 
 const MAX_EVENTS = 10_000;
 
@@ -158,6 +159,51 @@ export class DigestManager extends EventEmitter {
     const before = this.events.length;
     this.events = this.events.filter(e => e.timestamp >= beforeTimestamp);
     return before - this.events.length;
+  }
+
+  /**
+   * Debounced save of all events to JsonStore.
+   */
+  save(store: JsonStore): void {
+    store.scheduleSave('digest.json', this.getAllEvents());
+  }
+
+  /**
+   * Load events from JsonStore and restore state.
+   */
+  async load(store: JsonStore): Promise<boolean> {
+    const events = await store.load<ActivityEvent[]>('digest.json');
+    if (events?.length) {
+      this.restoreEvents(events);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Return all events for persistence.
+   */
+  getAllEvents(): ActivityEvent[] {
+    return [...this.events];
+  }
+
+  /**
+   * Restore events from persisted state.
+   * Merges with any existing events (deduplicates by id).
+   */
+  restoreEvents(events: ActivityEvent[]): void {
+    const existingIds = new Set(this.events.map(e => e.id));
+    for (const event of events) {
+      if (!existingIds.has(event.id)) {
+        this.events.push(event);
+      }
+    }
+    // Re-sort newest first
+    this.events.sort((a, b) => b.timestamp - a.timestamp);
+    // Enforce cap
+    if (this.events.length > MAX_EVENTS) {
+      this.events.length = MAX_EVENTS;
+    }
   }
 }
 

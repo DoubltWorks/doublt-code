@@ -212,4 +212,25 @@ export class TerminalSyncManager extends EventEmitter {
       }
     }
   }
+
+  /**
+   * Get all scrollback buffers as a serializable record (for persistence).
+   * Returns up to maxPersistLines per session.
+   */
+  getScrollbackMap(maxPersistLines = 500): Record<string, string[]> {
+    const result: Record<string, string[]> = {};
+    for (const [sessionId, lines] of this.scrollbackBuffers) {
+      result[sessionId] = lines.slice(-maxPersistLines);
+    }
+    return result;
+  }
+
+  /**
+   * Restore scrollback buffers from persisted state.
+   */
+  restoreScrollback(scrollbacks: Record<string, string[]>): void {
+    for (const [sessionId, lines] of Object.entries(scrollbacks)) {
+      this.scrollbackBuffers.set(sessionId, [...lines]);
+    }
+  }
 }
