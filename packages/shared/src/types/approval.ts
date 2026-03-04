@@ -38,3 +38,18 @@ export interface ApprovalDecision {
   decidedBy: string;
   decidedAt: number;
 }
+
+/** Time-based policy schedule (simple HH:MM-HH:MM range) */
+export interface ScheduledPolicy {
+  policyId: string;
+  /** Time range in "HH:MM-HH:MM" format (e.g., "22:00-06:00" for overnight) */
+  timeRange: string;
+  enabled: boolean;
+}
+
+/** Session-level policy override */
+export interface SessionPolicyOverride {
+  sessionId: string;
+  policyId: string;
+  setAt: number;
+}

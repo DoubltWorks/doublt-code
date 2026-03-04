@@ -148,7 +148,7 @@ describe('ClaudeSessionRunner', () => {
       pty.emit('pty:exited', { sessionId: 's1', exitCode: 1 });
 
       expect(maxEvents).toHaveLength(1);
-      expect(runner.getState('s1')?.status).toBe('stopped');
+      expect(runner.getState('s1')?.status).toBe('error');
     });
 
     it('handles clean exit without restart', async () => {

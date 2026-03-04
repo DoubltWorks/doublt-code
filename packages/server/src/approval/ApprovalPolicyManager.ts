@@ -7,6 +7,7 @@ import type {
   ApprovalDecision,
   ApprovalAction,
   ApprovalPreset,
+  ScheduledPolicy,
 } from '@doublt/shared';
 import type { JsonStore } from '../storage/JsonStore.js';
 
@@ -32,10 +33,29 @@ function getRiskLevel(toolName: string): 'low' | 'medium' | 'high' {
   return 'medium';
 }
 
+/** Parse "HH:MM-HH:MM" and check if current time is within range */
+function isInTimeRange(timeRange: string): boolean {
+  const match = timeRange.match(/^(\d{2}):(\d{2})-(\d{2}):(\d{2})$/);
+  if (!match) return false;
+  const [, sh, sm, eh, em] = match;
+  const now = new Date();
+  const current = now.getHours() * 60 + now.getMinutes();
+  const start = parseInt(sh, 10) * 60 + parseInt(sm, 10);
+  const end = parseInt(eh, 10) * 60 + parseInt(em, 10);
+  // Handle overnight ranges (e.g., 22:00-06:00)
+  if (start <= end) {
+    return current >= start && current < end;
+  }
+  return current >= start || current < end;
+}
+
 export class ApprovalPolicyManager extends EventEmitter {
   private policies: Map<string, ApprovalPolicy> = new Map();
   private activePolicyId: string | null = null;
   private queue: ApprovalQueueItem[] = [];
+  private sessionPolicies = new Map<string, string>(); // sessionId → policyId
+  private scheduledPolicies: ScheduledPolicy[] = [];
+  private scheduleTimer: ReturnType<typeof setInterval> | null = null;
 
   createPolicy(
     name: string,
@@ -106,9 +126,9 @@ export class ApprovalPolicyManager extends EventEmitter {
   evaluateToolUse(
     toolName: string,
     _input: Record<string, unknown>,
-    _sessionId: string,
+    sessionId: string,
   ): { action: ApprovalAction; matchedRule?: ApprovalRule } {
-    const policy = this.getActivePolicy();
+    const policy = this.getEffectivePolicy(sessionId);
     if (!policy || !policy.enabled) {
       return { action: 'require_confirm' };
     }
@@ -118,6 +138,140 @@ export class ApprovalPolicyManager extends EventEmitter {
       }
     }
     return { action: 'require_confirm' };
+  }
+
+  // ─── Session Policy Overrides ──────────────────────────────
+
+  /**
+   * Set a per-session policy override.
+   */
+  setSessionPolicy(sessionId: string, policyId: string): void {
+    if (!this.policies.has(policyId)) {
+      throw new Error(`Policy ${policyId} not found`);
+    }
+    this.sessionPolicies.set(sessionId, policyId);
+    this.emit('policy:updated', this.policies.get(policyId));
+  }
+
+  /**
+   * Remove a session's policy override.
+   */
+  clearSessionPolicy(sessionId: string): void {
+    this.sessionPolicies.delete(sessionId);
+  }
+
+  /**
+   * Get the effective policy for a session.
+   * Priority: session override > scheduled policy > active global policy.
+   */
+  getEffectivePolicy(sessionId?: string): ApprovalPolicy | null {
+    // 1. Session override
+    if (sessionId) {
+      const overrideId = this.sessionPolicies.get(sessionId);
+      if (overrideId) {
+        const policy = this.policies.get(overrideId);
+        if (policy) return policy;
+      }
+    }
+
+    // 2. Scheduled policy (check if any time-based policy is active now)
+    for (const sched of this.scheduledPolicies) {
+      if (sched.enabled && isInTimeRange(sched.timeRange)) {
+        const policy = this.policies.get(sched.policyId);
+        if (policy) return policy;
+      }
+    }
+
+    // 3. Active global policy
+    return this.getActivePolicy();
+  }
+
+  /**
+   * Check if a session is effectively in full_auto mode.
+   */
+  isFullAuto(sessionId?: string): boolean {
+    const policy = this.getEffectivePolicy(sessionId);
+    if (!policy) return false;
+    // full_auto = single wildcard rule with auto_approve
+    return policy.rules.length === 1
+      && policy.rules[0].toolPattern === '*'
+      && policy.rules[0].action === 'auto_approve';
+  }
+
+  // ─── Time-Based Scheduling ─────────────────────────────────
+
+  /**
+   * Schedule a policy to be active during a time range.
+   * @param policyId - policy to activate
+   * @param timeRange - "HH:MM-HH:MM" format (e.g., "22:00-06:00")
+   */
+  schedulePolicy(policyId: string, timeRange: string): ScheduledPolicy {
+    if (!this.policies.has(policyId)) {
+      throw new Error(`Policy ${policyId} not found`);
+    }
+    if (!/^\d{2}:\d{2}-\d{2}:\d{2}$/.test(timeRange)) {
+      throw new Error('timeRange must be in HH:MM-HH:MM format');
+    }
+    // Remove existing schedule for same policy
+    this.scheduledPolicies = this.scheduledPolicies.filter(s => s.policyId !== policyId);
+    const sched: ScheduledPolicy = { policyId, timeRange, enabled: true };
+    this.scheduledPolicies.push(sched);
+    this.ensureScheduleTimer();
+    this.emit('policy:updated', this.policies.get(policyId));
+    return sched;
+  }
+
+  /**
+   * Remove a scheduled policy.
+   */
+  clearSchedule(policyId: string): void {
+    this.scheduledPolicies = this.scheduledPolicies.filter(s => s.policyId !== policyId);
+    if (this.scheduledPolicies.length === 0 && this.scheduleTimer) {
+      clearInterval(this.scheduleTimer);
+      this.scheduleTimer = null;
+    }
+  }
+
+  /**
+   * Get all scheduled policies.
+   */
+  listSchedules(): ScheduledPolicy[] {
+    return [...this.scheduledPolicies];
+  }
+
+  /**
+   * Start a 1-minute interval to check scheduled policies.
+   */
+  private ensureScheduleTimer(): void {
+    if (this.scheduleTimer) return;
+    this.scheduleTimer = setInterval(() => {
+      // Emit event so server can re-evaluate active policy
+      this.emit('schedule:tick');
+    }, 60_000);
+  }
+
+  // ─── Toggle Preset ─────────────────────────────────────────
+
+  /**
+   * Toggle between conservative and full_auto presets.
+   * Reuses existing policies if available; creates new ones only if needed.
+   * Returns the newly active policy.
+   */
+  togglePreset(): ApprovalPolicy {
+    const current = this.getActivePolicy();
+    const targetPreset: ApprovalPreset = this.isFullAuto() ? 'conservative' : 'full_auto';
+
+    // Find existing policy matching the target preset name
+    const targetName = targetPreset === 'full_auto' ? 'Full Auto' : 'Conservative';
+    for (const policy of this.policies.values()) {
+      if (policy.name === targetName) {
+        this.setActivePolicy(policy.id);
+        return policy;
+      }
+    }
+
+    // No existing policy found — create via preset
+    return this.applyPreset(targetPreset);
   }
 
   enqueueApproval(
@@ -206,6 +360,16 @@ export class ApprovalPolicyManager extends EventEmitter {
       return true;
     }
     return false;
+  }
+
+  /**
+   * Clean up timers. Used during server shutdown.
+   */
+  destroy(): void {
+    if (this.scheduleTimer) {
+      clearInterval(this.scheduleTimer);
+      this.scheduleTimer = null;
+    }
   }
 
   applyPreset(preset: ApprovalPreset): ApprovalPolicy {

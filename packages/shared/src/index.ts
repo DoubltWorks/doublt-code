@@ -54,6 +54,8 @@ export type {
   ApprovalPreset,
   ApprovalQueueItem,
   ApprovalDecision,
+  ScheduledPolicy,
+  SessionPolicyOverride,
 } from './types/approval.js';
 
 // ─── Task Queue ─────────────────────────────────────────────

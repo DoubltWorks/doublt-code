@@ -502,6 +502,8 @@ export class DoubltServer {
     this.sessionManager.on('session:updated', (session) => {
       if (session.status === 'archived') {
         this.digestManager.logEvent('message', session.id, `Session archived: ${session.name}`);
+        // Clean up per-session policy override to prevent leaking entries
+        this.approvalManager.clearSessionPolicy(session.id);
       }
       this.sessionManager.save(this.jsonStore);
     });
@@ -808,6 +810,12 @@ export class DoubltServer {
       case 'policy:get': {
         const activePolicy = this.approvalManager.getActivePolicy();
         this.connectionManager.sendToClient(clientId, { type: 'policy:result', policy: activePolicy });
+        break;
+      }
+
+      case 'approval:toggle': {
+        const toggled = this.approvalManager.togglePreset();
+        this.connectionManager.sendToClient(clientId, { type: 'policy:result', policy: toggled });
         break;
       }
 

@@ -24,7 +24,7 @@ export interface ClaudeRunnerOptions {
 
 export interface ClaudeSessionState {
   sessionId: SessionId;
-  status: 'idle' | 'running' | 'crashed' | 'stopped' | 'budget_paused';
+  status: 'idle' | 'running' | 'crashed' | 'stopped' | 'error' | 'budget_paused';
   restartCount: number;
   lastStartedAt?: number;
   lastCrashedAt?: number;
@@ -213,7 +213,7 @@ export class ClaudeSessionRunner extends EventEmitter {
     if (!state.autoRestart) return;
 
     if (state.restartCount > this.maxRestarts) {
-      state.status = 'stopped';
+      state.status = 'error';
       this.emit('claude:max_restarts', {
         sessionId,
         restartCount: state.restartCount,

@@ -148,6 +148,101 @@ function handlePrefixKey(key: string, ctx: RawTerminalContext): void {
       cleanup(ctx);
       break;
 
+    case 'a': { // Toggle approval policy (conservative <-> full_auto)
+      bridge.send({ type: 'approval:toggle' });
+      const onToggleResult = (msg: ServerMessage) => {
+        if (msg.type === 'policy:result') {
+          clearTimeout(toggleTimeout);
+          bridge.removeListener('message:policy:result', onToggleResult);
+          const name = msg.policy?.name ?? 'None';
+          process.stdout.write(`\r\n[Approval] Toggled to: ${name}\r\n`);
+        }
+      };
+      const toggleTimeout = setTimeout(() => {
+        bridge.removeListener('message:policy:result', onToggleResult);
+        process.stdout.write('\r\n[Approval] Toggle timeout\r\n');
+      }, 5000);
+      bridge.on('message:policy:result', onToggleResult);
+      break;
+    }
+
+    case 't': { // Task queue display
+      bridge.send({ type: 'task:list' });
+      const onTaskList = (msg: ServerMessage) => {
+        if (msg.type === 'task:list:result') {
+          clearTimeout(taskTimeout);
+          bridge.removeListener('message:task:list:result', onTaskList);
+          process.stdout.write('\r\n--- Task Queue ---\r\n');
+          if (msg.tasks.length === 0) {
+            process.stdout.write('  (empty)\r\n');
+          } else {
+            for (const t of msg.tasks) {
+              const icon = t.status === 'running' ? '>' : t.status === 'completed' ? '+' : '-';
+              process.stdout.write(`  ${icon} [${t.priority}] ${t.title} (${t.status})\r\n`);
+            }
+          }
+          process.stdout.write('------------------\r\n');
+        }
+      };
+      const taskTimeout = setTimeout(() => {
+        bridge.removeListener('message:task:list:result', onTaskList);
+        process.stdout.write('\r\n[Tasks] Request timeout\r\n');
+      }, 5000);
+      bridge.on('message:task:list:result', onTaskList);
+      break;
+    }
+
+    case 'g': { // Git status display
+      if (!ctx.activeSessionId) break;
+      bridge.send({ type: 'git:status:request', sessionId: ctx.activeSessionId });
+      const onGitStatus = (msg: ServerMessage) => {
+        if (msg.type === 'git:status:result') {
+          clearTimeout(gitTimeout);
+          bridge.removeListener('message:git:status:result', onGitStatus);
+          const gs = msg.status;
+          process.stdout.write('\r\n--- Git Status ---\r\n');
+          process.stdout.write(`  Branch: ${gs.branch}\r\n`);
+          if (gs.ahead > 0) process.stdout.write(`  Ahead: ${gs.ahead}\r\n`);
+          if (gs.behind > 0) process.stdout.write(`  Behind: ${gs.behind}\r\n`);
+          if (gs.staged.length > 0) process.stdout.write(`  Staged: ${gs.staged.length} files\r\n`);
+          if (gs.unstaged.length > 0) process.stdout.write(`  Unstaged: ${gs.unstaged.length} files\r\n`);
+          if (gs.untracked.length > 0) process.stdout.write(`  Untracked: ${gs.untracked.length} files\r\n`);
+          process.stdout.write('------------------\r\n');
+        }
+      };
+      const gitTimeout = setTimeout(() => {
+        bridge.removeListener('message:git:status:result', onGitStatus);
+        process.stdout.write('\r\n[Git] Request timeout\r\n');
+      }, 5000);
+      bridge.on('message:git:status:result', onGitStatus);
+      break;
+    }
+
+    case '$': { // Cost summary display
+      bridge.send({ type: 'usage:request', period: 'daily' });
+      const onUsage = (msg: ServerMessage) => {
+        if (msg.type === 'usage:result') {
+          clearTimeout(costTimeout);
+          bridge.removeListener('message:usage:result', onUsage);
+          const u = msg.summary;
+          process.stdout.write('\r\n--- Cost Summary ---\r\n');
+          process.stdout.write(`  Total tokens: ${u.totalTokens.toLocaleString()}\r\n`);
+          process.stdout.write(`  Est. cost: $${u.totalCostUsd.toFixed(4)}\r\n`);
+          if (u.budgetLimit != null && u.budgetLimit > 0) {
+            const pct = Math.round((u.budgetUsed / u.budgetLimit) * 100);
+            process.stdout.write(`  Budget: ${pct}% used ($${u.budgetUsed.toFixed(2)}/$${u.budgetLimit.toFixed(2)})\r\n`);
+          }
+          process.stdout.write('--------------------\r\n');
+        }
+      };
+      const costTimeout = setTimeout(() => {
+        bridge.removeListener('message:usage:result', onUsage);
+        process.stdout.write('\r\n[Cost] Request timeout\r\n');
+      }, 5000);
+      bridge.on('message:usage:result', onUsage);
+      break;
+    }
+
     case '?': // Help
       process.stdout.write('\r\n--- doublt keybindings ---\r\n');
       process.stdout.write('  Ctrl-b c   New session\r\n');
@@ -157,6 +252,10 @@ function handlePrefixKey(key: string, ctx: RawTerminalContext): void {
       process.stdout.write('  Ctrl-b m   Mobile pair\r\n');
       process.stdout.write('  Ctrl-b h   Handoff\r\n');
       process.stdout.write('  Ctrl-b d   Detach\r\n');
+      process.stdout.write('  Ctrl-b a   Toggle approval (conservative/full_auto)\r\n');
+      process.stdout.write('  Ctrl-b t   Task queue\r\n');
+      process.stdout.write('  Ctrl-b g   Git status\r\n');
+      process.stdout.write('  Ctrl-b $   Cost summary\r\n');
       process.stdout.write('  Ctrl-b ?   This help\r\n');
       process.stdout.write('-------------------------\r\n');
       break;

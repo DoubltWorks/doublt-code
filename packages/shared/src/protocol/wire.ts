@@ -160,6 +160,10 @@ export interface ApprovalDecideMsg {
   reason?: string;
 }
 
+export interface ApprovalToggleMsg {
+  type: 'approval:toggle';
+}
+
 // ─── Task queue messages (Client → Server) ───────────────────
 
 export interface TaskCreateMsg {
@@ -314,6 +318,7 @@ export type ClientMessage =
   | PolicyListMsg
   | ApprovalQueueListMsg
   | ApprovalDecideMsg
+  | ApprovalToggleMsg
   // Task queue
   | TaskCreateMsg
   | TaskUpdateMsg
@@ -586,7 +591,7 @@ export interface ClaudeStatusResultMsg {
   type: 'claude:status:result';
   sessions: Array<{
     sessionId: SessionId;
-    status: 'idle' | 'running' | 'crashed' | 'stopped' | 'budget_paused';
+    status: 'idle' | 'running' | 'crashed' | 'stopped' | 'error' | 'budget_paused';
     restartCount: number;
     lastStartedAt?: number;
   }>;
