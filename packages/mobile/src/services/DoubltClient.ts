@@ -17,6 +17,7 @@
  * - Git status queries
  * - Cost & usage tracking
  * - Search & templates
+ * - Offline queue + sync (OfflineStore + SyncQueue)
  */
 
 import { EventEmitter } from 'events';
@@ -30,8 +31,19 @@ import type {
   SearchQuery,
   BudgetConfig,
 } from '@doublt/shared';
+import type { PendingAction, PendingActionType } from '@doublt/shared/src/types/offline.js';
+import { OfflineStore, type StorageBackend } from './OfflineStore.js';
+import { SyncQueue } from './SyncQueue.js';
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
+
+/** Message types that can be queued for offline send */
+const QUEUEABLE_TYPES: ReadonlySet<string> = new Set<PendingActionType>([
+  'chat:send',
+  'tool:approve',
+  'session:create',
+  'handoff:trigger',
+]);
 
 export class DoubltClient extends EventEmitter {
   private ws: WebSocket | null = null;
@@ -41,6 +53,29 @@ export class DoubltClient extends EventEmitter {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
   private readonly maxReconnectAttempts = 15;
+  private wasConnectedBefore = false;
+
+  readonly offlineStore: OfflineStore;
+  readonly syncQueue: SyncQueue;
+
+  constructor(storage?: StorageBackend) {
+    super();
+    this.offlineStore = new OfflineStore(storage);
+    this.syncQueue = new SyncQueue();
+    if (storage) {
+      this.syncQueue.setStorage(storage);
+    }
+
+    // When SyncQueue signals server-wins needed, refresh all server state
+    this.syncQueue.on('serverSyncNeeded', () => {
+      this.refreshServerState();
+    });
+  }
+
+  /** Initialize offline subsystems (call once on app startup) */
+  async initOffline(): Promise<void> {
+    await this.syncQueue.loadPersistedQueue();
+  }
 
   get isConnected(): boolean {
     return this.state === 'connected';
@@ -71,7 +106,7 @@ export class DoubltClient extends EventEmitter {
       this.ws = new WebSocket(this.serverUrl);
 
       this.ws.onopen = () => {
-        this.sendRaw({
+        this.sendRawDirect({
           type: 'authenticate',
           token: this.token,
           clientType: 'mobile',
@@ -114,10 +149,18 @@ export class DoubltClient extends EventEmitter {
         if (msg.success) {
           this.state = 'connected';
           this.reconnectAttempts = 0;
+          this.wasConnectedBefore = true;
           this.emit('stateChanged', this.state);
           this.emit('connected');
+
+          // Flush offline queue if pending (works for both reconnect and first connect after app restart)
+          if (!this.syncQueue.isEmpty) {
+            void this.flushOfflineQueue();
+          }
+
           this.listSessions();
           this.listWorkspaces();
+          void this.offlineStore.setLastSynced();
         } else {
           this.emit('authFailed', msg.error);
           this.disconnect();
@@ -299,10 +342,45 @@ export class DoubltClient extends EventEmitter {
     }
   }
 
-  private sendRaw(msg: ClientMessage): void {
+  /** Send directly over WebSocket — no offline queueing */
+  private sendRawDirect(msg: ClientMessage): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
     }
+  }
+
+  /**
+   * Send a message. If disconnected and the message type is queueable,
+   * enqueue it to SyncQueue for later flush on reconnect.
+   */
+  private sendRaw(msg: ClientMessage): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(msg));
+    } else if (QUEUEABLE_TYPES.has(msg.type)) {
+      this.syncQueue.enqueue(msg.type as PendingActionType, msg as unknown as Record<string, unknown>);
+    }
+  }
+
+  /** Flush offline queue — server-wins refresh is triggered by SyncQueue's serverSyncNeeded event */
+  private async flushOfflineQueue(): Promise<void> {
+    const result = await this.syncQueue.flush(async (action: PendingAction) => {
+      // Reconstruct the ClientMessage from the queued payload
+      const msg = action.payload as unknown as ClientMessage;
+      if (this.ws?.readyState !== WebSocket.OPEN) return false;
+      this.ws.send(JSON.stringify(msg));
+      return true;
+    });
+
+    this.emit('syncComplete', result);
+    void this.offlineStore.setLastSynced();
+  }
+
+  /** Request fresh state from server (server-wins conflict resolution) */
+  private refreshServerState(): void {
+    this.listSessions();
+    this.listWorkspaces();
+    this.listApprovalQueue();
+    this.listTasks();
   }
 
   // ─── Session API ────────────────────────────────────

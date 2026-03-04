@@ -14,6 +14,7 @@
  * - Cost & usage tracking
  * - Search & templates
  * - Command macros
+ * - Offline cache & sync queue
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -44,6 +45,7 @@ import type {
   SessionTemplate,
   CommandMacro,
 } from '@doublt/shared';
+import type { SyncState } from '@doublt/shared/src/types/offline.js';
 
 interface DoubltState {
   connectionState: 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
@@ -78,6 +80,17 @@ interface DoubltState {
   templates: SessionTemplate[];
   // Macros
   macros: CommandMacro[];
+  // Sync state
+  syncState: SyncState;
+}
+
+/** Debounce helper: returns a function that delays execution */
+function debounce<T extends (...args: unknown[]) => void>(fn: T, ms: number): T {
+  let timer: ReturnType<typeof setTimeout>;
+  return ((...args: unknown[]) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), ms);
+  }) as unknown as T;
 }
 
 export function useDoublt() {
@@ -111,6 +124,7 @@ export function useDoublt() {
     searchResults: [],
     templates: [],
     macros: [],
+    syncState: { lastSyncedAt: 0, pendingCount: 0, cacheSize: 0, isOnline: false },
   });
 
   useEffect(() => {
@@ -122,10 +136,84 @@ export function useDoublt() {
     notificationServiceRef.current = notificationService;
     backgroundServiceRef.current = backgroundService;
 
+    // ─── Initialize offline subsystems & load cache ────
+
+    void (async () => {
+      await client.initOffline();
+
+      // Load cached data into initial state
+      const [cachedSessions, cachedWorkspaces, cachedNotifications] = await Promise.all([
+        client.offlineStore.loadMetadata<SessionListItem[]>('sessions'),
+        client.offlineStore.loadMetadata<WorkspaceListItem[]>('workspaces'),
+        client.offlineStore.loadNotifications(),
+      ]);
+
+      const syncState = await client.offlineStore.getSyncState(
+        client.syncQueue.pendingCount,
+        client.isConnected,
+      );
+
+      setState(prev => ({
+        ...prev,
+        sessions: cachedSessions ?? prev.sessions,
+        workspaces: cachedWorkspaces ?? prev.workspaces,
+        activeWorkspaceId: cachedWorkspaces?.length ? cachedWorkspaces[0].id : prev.activeWorkspaceId,
+        syncState,
+      }));
+
+      // Load cached notifications into NotificationService
+      for (const notif of cachedNotifications) {
+        notificationService.handleServerNotification(notif);
+      }
+    })();
+
+    // ─── Debounced cache save helpers ──────────────────
+
+    const saveSessionsCache = debounce((sessions: SessionListItem[]) => {
+      void client.offlineStore.cacheMetadata('sessions', sessions);
+    }, 1000);
+
+    const saveWorkspacesCache = debounce((workspaces: WorkspaceListItem[]) => {
+      void client.offlineStore.cacheMetadata('workspaces', workspaces);
+    }, 1000);
+
+    const saveMessagesCache = debounce((sessionId: string, messages: ChatMessage[]) => {
+      void client.offlineStore.cacheMessages(sessionId, messages);
+    }, 2000);
+
     // ─── Connection state ─────────────────────────────
 
     client.on('stateChanged', (connectionState: string) => {
-      setState(prev => ({ ...prev, connectionState: connectionState as DoubltState['connectionState'] }));
+      setState(prev => ({
+        ...prev,
+        connectionState: connectionState as DoubltState['connectionState'],
+        syncState: { ...prev.syncState, isOnline: connectionState === 'connected' },
+      }));
+    });
+
+    // ─── Sync events ──────────────────────────────────
+
+    client.syncQueue.on('enqueued', () => {
+      setState(prev => ({
+        ...prev,
+        syncState: { ...prev.syncState, pendingCount: client.syncQueue.pendingCount },
+      }));
+    });
+
+    client.syncQueue.on('flushed', () => {
+      setState(prev => ({
+        ...prev,
+        syncState: { ...prev.syncState, pendingCount: client.syncQueue.pendingCount },
+      }));
+    });
+
+    client.on('syncComplete', () => {
+      void client.offlineStore.getSyncState(
+        client.syncQueue.pendingCount,
+        client.isConnected,
+      ).then(syncState => {
+        setState(prev => ({ ...prev, syncState }));
+      });
     });
 
     // ─── Workspace events ─────────────────────────────
@@ -136,48 +224,58 @@ export function useDoublt() {
         workspaces,
         activeWorkspaceId: prev.activeWorkspaceId ?? (workspaces.length > 0 ? workspaces[0].id : null),
       }));
+      saveWorkspacesCache(workspaces);
     });
 
     client.on('workspaceCreated', (workspace: WorkspaceListItem) => {
-      setState(prev => ({
-        ...prev,
-        workspaces: [...prev.workspaces, workspace],
-      }));
+      setState(prev => {
+        const workspaces = [...prev.workspaces, workspace];
+        saveWorkspacesCache(workspaces);
+        return { ...prev, workspaces };
+      });
     });
 
     client.on('workspaceUpdated', (workspace: WorkspaceListItem) => {
-      setState(prev => ({
-        ...prev,
-        workspaces: prev.workspaces.map(ws => ws.id === workspace.id ? workspace : ws),
-      }));
+      setState(prev => {
+        const workspaces = prev.workspaces.map(ws => ws.id === workspace.id ? workspace : ws);
+        saveWorkspacesCache(workspaces);
+        return { ...prev, workspaces };
+      });
     });
 
     client.on('workspaceDeleted', (workspaceId: string) => {
-      setState(prev => ({
-        ...prev,
-        workspaces: prev.workspaces.filter(ws => ws.id !== workspaceId),
-        activeWorkspaceId: prev.activeWorkspaceId === workspaceId ? null : prev.activeWorkspaceId,
-      }));
+      setState(prev => {
+        const workspaces = prev.workspaces.filter(ws => ws.id !== workspaceId);
+        saveWorkspacesCache(workspaces);
+        return {
+          ...prev,
+          workspaces,
+          activeWorkspaceId: prev.activeWorkspaceId === workspaceId ? null : prev.activeWorkspaceId,
+        };
+      });
     });
 
     // ─── Session events ───────────────────────────────
 
     client.on('sessionsUpdated', (sessions: SessionListItem[]) => {
       setState(prev => ({ ...prev, sessions }));
+      saveSessionsCache(sessions);
     });
 
     client.on('sessionUpdated', (session: SessionListItem) => {
-      setState(prev => ({
-        ...prev,
-        sessions: prev.sessions.map(s => s.id === session.id ? session : s),
-      }));
+      setState(prev => {
+        const sessions = prev.sessions.map(s => s.id === session.id ? session : s);
+        saveSessionsCache(sessions);
+        return { ...prev, sessions };
+      });
     });
 
     client.on('sessionCreated', (session: SessionListItem) => {
-      setState(prev => ({
-        ...prev,
-        sessions: [...prev.sessions, session],
-      }));
+      setState(prev => {
+        const sessions = [...prev.sessions, session];
+        saveSessionsCache(sessions);
+        return { ...prev, sessions };
+      });
     });
 
     // ─── Chat events ──────────────────────────────────
@@ -193,6 +291,8 @@ export function useDoublt() {
           sessionMsgs.push(message);
         }
         messages.set(message.sessionId, sessionMsgs);
+        // Cache messages for offline access
+        saveMessagesCache(message.sessionId, sessionMsgs);
         return { ...prev, messages };
       });
     });
@@ -382,8 +482,10 @@ export function useDoublt() {
 
     return () => {
       backgroundService.destroy();
+      notificationService.destroy();
       client.disconnect();
       client.removeAllListeners();
+      client.syncQueue.removeAllListeners();
     };
   }, []);
 
@@ -413,6 +515,23 @@ export function useDoublt() {
   const selectSession = useCallback((sessionId: SessionId) => {
     clientRef.current?.attachSession(sessionId);
     setState(prev => ({ ...prev, activeSessionId: sessionId }));
+
+    // Load cached messages for this session
+    if (clientRef.current) {
+      void clientRef.current.offlineStore.loadMessages(sessionId).then(cached => {
+        if (cached.length > 0) {
+          setState(prev => {
+            const messages = new Map(prev.messages);
+            const existing = messages.get(sessionId) ?? [];
+            if (existing.length === 0) {
+              messages.set(sessionId, cached);
+              return { ...prev, messages };
+            }
+            return prev;
+          });
+        }
+      });
+    }
   }, []);
 
   const createSession = useCallback((name?: string) => {
@@ -577,6 +696,26 @@ export function useDoublt() {
     }));
   }, []);
 
+  // ─── Offline Actions ────────────────────────────────
+
+  const cleanupCache = useCallback(async () => {
+    if (clientRef.current) {
+      return clientRef.current.offlineStore.cleanup();
+    }
+    return 0;
+  }, []);
+
+  const clearCache = useCallback(async () => {
+    if (clientRef.current) {
+      await clientRef.current.offlineStore.clearAll();
+      clientRef.current.syncQueue.clear();
+      setState(prev => ({
+        ...prev,
+        syncState: { lastSyncedAt: 0, pendingCount: 0, cacheSize: 0, isOnline: prev.syncState.isOnline },
+      }));
+    }
+  }, []);
+
   // ─── Computed values ────────────────────────────────
 
   const activeSessionCost = state.activeSessionId
@@ -640,5 +779,8 @@ export function useDoublt() {
     // Macros
     saveMacro,
     deleteMacro,
+    // Offline
+    cleanupCache,
+    clearCache,
   };
 }

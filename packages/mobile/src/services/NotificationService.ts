@@ -12,6 +12,7 @@
 
 import { Platform, AppState, type AppStateStatus } from 'react-native';
 import type { SessionNotification, LongRunningCommand } from '@doublt/shared';
+import type { OfflineStore } from './OfflineStore.js';
 
 /** In-app notification that's displayed as a banner */
 export interface InAppNotification {
@@ -36,12 +37,69 @@ export class NotificationService {
   private unreadCount = 0;
   private appState: AppStateStatus = 'active';
   private pushToken: string | null = null;
+  private offlineStore: OfflineStore | null = null;
+  private appStateSubscription: ReturnType<typeof AppState.addEventListener> | null = null;
 
-  constructor() {
+  constructor(offlineStore?: OfflineStore) {
+    this.offlineStore = offlineStore ?? null;
+
     // Track app state for deciding push vs in-app delivery
-    AppState.addEventListener('change', (state) => {
+    this.appStateSubscription = AppState.addEventListener('change', (state) => {
       this.appState = state;
     });
+  }
+
+  /** Clean up subscriptions */
+  destroy(): void {
+    this.appStateSubscription?.remove();
+    this.appStateSubscription = null;
+  }
+
+  /** Attach an OfflineStore for notification persistence */
+  setOfflineStore(store: OfflineStore): void {
+    this.offlineStore = store;
+  }
+
+  /** Load persisted notifications from OfflineStore (call on app startup) */
+  async loadPersistedNotifications(): Promise<void> {
+    if (!this.offlineStore) return;
+    const cached = await this.offlineStore.loadNotifications();
+    for (const serverNotif of cached) {
+      // Restore as InAppNotification without re-emitting to listeners
+      const inApp: InAppNotification = {
+        id: `notif-restored-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        title: serverNotif.title,
+        body: serverNotif.body,
+        type: serverNotif.type,
+        priority: serverNotif.priority,
+        timestamp: serverNotif.timestamp,
+        sessionId: serverNotif.sessionId,
+        read: true, // Persisted notifications are considered read
+        actionData: serverNotif.data,
+      };
+      this.notifications.push(inApp);
+    }
+    // Cap at 200
+    if (this.notifications.length > 200) {
+      this.notifications = this.notifications.slice(0, 200);
+    }
+  }
+
+  /** Persist current notifications to OfflineStore */
+  private persistNotifications(): void {
+    if (!this.offlineStore) return;
+    // Convert InAppNotifications back to SessionNotification shape for storage
+    const toCache: SessionNotification[] = this.notifications.slice(0, 100).map(n => ({
+      sessionId: n.sessionId,
+      type: n.type,
+      title: n.title,
+      body: n.body,
+      timestamp: n.timestamp,
+      priority: n.priority,
+      pushEnabled: false,
+      data: n.actionData,
+    }));
+    void this.offlineStore.cacheNotifications(toCache);
   }
 
   /**
@@ -83,6 +141,9 @@ export class NotificationService {
     for (const listener of this.listeners) {
       listener(inApp);
     }
+
+    // Persist notifications to offline store
+    this.persistNotifications();
 
     // If app is in background and this is a high-priority notification,
     // schedule a local push notification
@@ -182,7 +243,7 @@ export class NotificationService {
    * Schedule a local notification when app is in background.
    * Uses React Native's built-in notification API.
    */
-  private scheduleLocalNotification(notification: InAppNotification): void {
+  private scheduleLocalNotification(_notification: InAppNotification): void {
     // In a production app, this would use expo-notifications:
     // Notifications.scheduleNotificationAsync({
     //   content: {
@@ -197,8 +258,8 @@ export class NotificationService {
     //   trigger: null, // immediate
     // });
 
-    // Emit event for the background task handler to pick up
-    this.listeners.forEach(l => l(notification));
+    // Note: listeners are already notified in handleServerNotification()
+    // — no re-emit here to avoid double notification delivery
   }
 
   /**
@@ -208,5 +269,6 @@ export class NotificationService {
     const cutoff = Date.now() - maxAgeMs;
     this.notifications = this.notifications.filter(n => n.timestamp > cutoff);
     this.unreadCount = this.notifications.filter(n => !n.read).length;
+    this.persistNotifications();
   }
 }
