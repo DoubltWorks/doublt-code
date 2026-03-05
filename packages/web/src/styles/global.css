@@ -15,6 +15,23 @@
   --yellow: #f9e2af;
   --border: #45475a;
   --divider: #585b70;
+
+  /* Sidebar & panels */
+  --sidebar-width: 300px;
+  --panel-header-bg: var(--bg-secondary);
+  --panel-badge-bg: var(--bg-hover);
+  --overlay-backdrop: rgba(0, 0, 0, 0.5);
+
+  /* Status colors */
+  --status-running: #a6e3a1;
+  --status-idle: #6c7086;
+  --status-crashed: #f38ba8;
+  --status-queued: #89b4fa;
+
+  /* Risk level colors */
+  --risk-low: #a6e3a1;
+  --risk-medium: #f9e2af;
+  --risk-high: #f38ba8;
 }
 
 * {
@@ -59,6 +76,11 @@ button:active {
   color: var(--bg-primary);
 }
 
+button:focus-visible {
+  outline: 2px solid transparent;
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
 .divider-h {
   cursor: col-resize;
   width: 4px;
@@ -83,4 +105,9 @@ button:active {
 .divider-v:hover,
 .divider-v.active {
   background: var(--accent);
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
 }

@@ -5,9 +5,10 @@ interface SessionTabsProps {
   activeSessionId: string | null;
   onSelectSession: (id: string) => void;
   onArchiveSession?: (id: string) => void;
+  workspaceName?: string;
 }
 
-export function SessionTabs({ sessions, activeSessionId, onSelectSession, onArchiveSession }: SessionTabsProps) {
+export function SessionTabs({ sessions, activeSessionId, onSelectSession, onArchiveSession, workspaceName }: SessionTabsProps) {
   if (sessions.length === 0) return null;
 
   return (
@@ -23,6 +24,22 @@ export function SessionTabs({ sessions, activeSessionId, onSelectSession, onArch
         overflowX: 'auto',
       }}
     >
+      {/* Workspace filter indicator */}
+      {workspaceName && (
+        <span
+          style={{
+            fontSize: 10,
+            color: 'var(--text-muted)',
+            padding: '2px 8px',
+            borderRight: '1px solid var(--border)',
+            marginRight: 4,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {workspaceName}
+        </span>
+      )}
+
       {sessions.map((session, idx) => {
         const isActive = session.id === activeSessionId;
         return (
@@ -54,7 +71,7 @@ export function SessionTabs({ sessions, activeSessionId, onSelectSession, onArch
             )}
             {onArchiveSession && sessions.length > 1 && (
               <span
-                role="button"
+                aria-label={`Close session ${session.name}`}
                 onClick={(e) => {
                   e.stopPropagation();
                   onArchiveSession(session.id);
@@ -68,7 +85,7 @@ export function SessionTabs({ sessions, activeSessionId, onSelectSession, onArch
                   lineHeight: 1,
                 }}
               >
-                ×
+                x
               </span>
             )}
           </button>
