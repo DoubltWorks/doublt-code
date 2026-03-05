@@ -141,6 +141,38 @@ function handlePrefixKey(key: string, ctx: RawTerminalContext): void {
       }
       break;
 
+    case 'W': { // Create workspace
+      const wsName = `workspace-${Date.now().toString(36)}`;
+      bridge.createWorkspace(wsName);
+      process.stdout.write(`\r\n[Workspace] Created: ${wsName}\r\n`);
+      break;
+    }
+
+    case 'S': { // List workspaces
+      bridge.send({ type: 'workspace:list' });
+      const onWsList = (msg: ServerMessage) => {
+        if (msg.type === 'workspace:list:result') {
+          bridge.removeListener('message', onWsList);
+          clearTimeout(wsTimeout);
+          process.stdout.write('\r\n--- Workspaces ---\r\n');
+          if (msg.workspaces.length === 0) {
+            process.stdout.write('  (none)\r\n');
+          } else {
+            for (const ws of msg.workspaces) {
+              process.stdout.write(`  ${ws.name} (${ws.sessionCount} sessions)\r\n`);
+            }
+          }
+          process.stdout.write('------------------\r\n');
+        }
+      };
+      const wsTimeout = setTimeout(() => {
+        bridge.removeListener('message', onWsList);
+        process.stdout.write('\r\n[Workspace] Request timeout\r\n');
+      }, 5000);
+      bridge.on('message', onWsList);
+      break;
+    }
+
     case 'd': // Detach
       if (ctx.activeSessionId) {
         bridge.detachSession(ctx.activeSessionId);
@@ -249,6 +281,8 @@ function handlePrefixKey(key: string, ctx: RawTerminalContext): void {
       process.stdout.write('  Ctrl-b n   Next session\r\n');
       process.stdout.write('  Ctrl-b p   Previous session\r\n');
       process.stdout.write('  Ctrl-b w   List sessions\r\n');
+      process.stdout.write('  Ctrl-b W   Create workspace\r\n');
+      process.stdout.write('  Ctrl-b S   List workspaces\r\n');
       process.stdout.write('  Ctrl-b m   Mobile pair\r\n');
       process.stdout.write('  Ctrl-b h   Handoff\r\n');
       process.stdout.write('  Ctrl-b d   Detach\r\n');

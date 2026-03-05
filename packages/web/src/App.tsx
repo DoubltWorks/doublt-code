@@ -100,8 +100,8 @@ export function App() {
 
   // Session navigation
   const handleNewSession = useCallback(() => {
-    createSession();
-  }, [createSession]);
+    createSession(workspace.activeWorkspaceId ?? undefined);
+  }, [createSession, workspace.activeWorkspaceId]);
 
   const handleNextSession = useCallback(() => {
     if (sessions.length < 2 || !activeSessionId) return;

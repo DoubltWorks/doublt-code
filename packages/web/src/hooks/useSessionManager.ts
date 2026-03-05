@@ -18,7 +18,7 @@ interface UseSessionManagerReturn {
   sessions: SessionInfo[];
   activeSessionId: string | null;
   setActiveSessionId: (id: string) => void;
-  createSession: () => void;
+  createSession: (workspaceId?: string) => void;
   attachSession: (id: string) => void;
   detachSession: (id: string) => void;
   archiveSession: (id: string) => void;
@@ -80,10 +80,13 @@ export function useSessionManager(
     }
   }, [connectionState, send]);
 
-  const createSession = useCallback(() => {
+  const createSession = useCallback((workspaceId?: string) => {
     send({
       type: 'session:create',
-      options: { name: `session-${Date.now().toString(36)}` },
+      options: {
+        name: `session-${Date.now().toString(36)}`,
+        ...(workspaceId ? { workspaceId } : {}),
+      },
     });
   }, [send]);
 
