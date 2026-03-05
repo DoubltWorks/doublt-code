@@ -428,6 +428,48 @@ program
   });
 
 program
+  .command('update')
+  .description('Update tt-code to the latest version')
+  .option('--check', 'Check for updates without installing')
+  .action(async (opts: { check?: boolean }) => {
+    const currentVersion = typeof __PKG_VERSION__ !== 'undefined' ? __PKG_VERSION__ : '0.0.0';
+    console.log(`Current version: ${currentVersion}`);
+
+    // Fetch latest version from registry
+    console.log('Checking for updates...');
+    try {
+      const { execSync } = await import('node:child_process');
+      const latest = execSync('npm view @doubltworks/tt-code version 2>/dev/null', { encoding: 'utf8' }).trim();
+
+      if (!latest) {
+        console.log('Could not determine latest version from registry.');
+        return;
+      }
+
+      if (latest === currentVersion) {
+        console.log(`Already up to date (v${currentVersion}).`);
+        return;
+      }
+
+      console.log(`New version available: ${latest}`);
+
+      if (opts.check) {
+        console.log(`Run "tt-code update" to install.`);
+        return;
+      }
+
+      console.log('Installing...');
+      execSync('npm install -g @doubltworks/tt-code@latest', { stdio: 'inherit' });
+      console.log(`Updated to v${latest}.`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`Update failed: ${msg}`);
+      console.log('You can update manually: npm install -g @doubltworks/tt-code@latest');
+      process.exit(1);
+    }
+  });
+
+program
   .command('pair')
   .description('Generate mobile pairing QR code')
   .action(() => {
