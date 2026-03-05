@@ -285,7 +285,7 @@ async function cleanup(ctx: RawTerminalContext): Promise<void> {
 program
   .name('tt-code')
   .description('tt-code — Multi-session coding bridge with mobile sync')
-  .version('0.1.0');
+  .version(typeof __PKG_VERSION__ !== 'undefined' ? __PKG_VERSION__ : '0.0.0');
 
 program
   .command('start')

@@ -1,3 +1,6 @@
+// Build-time constant injected by esbuild
+declare const __PKG_VERSION__: string;
+
 // Ambient module declarations for uninstalled dependencies.
 // These will be replaced by actual @types packages after `pnpm install`.
 
