@@ -11,7 +11,7 @@
  * Navigation: PairScreen -> WorkspaceListScreen -> SessionListScreen -> ChatScreen
  */
 
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import type { WorkspaceListItem, WorkspaceId } from '@doublt/shared';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Props {
@@ -31,6 +32,7 @@ interface Props {
   unreadNotificationCount: number;
   onOpenNotifications: () => void;
   onOpenSearch?: () => void;
+  onRefresh?: () => void;
 }
 
 function WorkspaceItem({
@@ -87,8 +89,15 @@ export function WorkspaceListScreen({
   unreadNotificationCount,
   onOpenNotifications,
   onOpenSearch,
+  onRefresh,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const [refreshing, setRefreshing] = useState(false);
+  const handleRefresh = useCallback(() => {
+    setRefreshing(true);
+    onRefresh?.();
+    setTimeout(() => setRefreshing(false), 1000);
+  }, [onRefresh]);
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
@@ -99,11 +108,11 @@ export function WorkspaceListScreen({
         <View style={styles.headerRight}>
           {onOpenSearch && (
             <TouchableOpacity style={styles.notificationButton} onPress={onOpenSearch}>
-              <Text style={styles.notificationIcon}>search</Text>
+              <Ionicons name="search" size={18} color="#94a3b8" />
             </TouchableOpacity>
           )}
           <TouchableOpacity style={styles.notificationButton} onPress={onOpenNotifications}>
-            <Text style={styles.notificationIcon}>bell</Text>
+            <Ionicons name="notifications" size={18} color="#94a3b8" />
             {unreadNotificationCount > 0 && (
               <View style={styles.notificationBadge}>
                 <Text style={styles.notificationBadgeText}>
@@ -135,6 +144,8 @@ export function WorkspaceListScreen({
           />
         )}
         contentContainerStyle={styles.list}
+        onRefresh={onRefresh ? handleRefresh : undefined}
+        refreshing={refreshing}
         ListEmptyComponent={
           <Text style={styles.emptyText}>
             No workspaces yet. Start doublt on your PC first.
@@ -143,7 +154,8 @@ export function WorkspaceListScreen({
       />
 
       <TouchableOpacity style={styles.createButton} onPress={onCreateWorkspace}>
-        <Text style={styles.createButtonText}>+ New Workspace</Text>
+        <Ionicons name="add" size={20} color="#fff" />
+        <Text style={styles.createButtonText}>New Workspace</Text>
       </TouchableOpacity>
     </View>
   );
@@ -236,11 +248,14 @@ const styles = StyleSheet.create({
   lastActivity: { color: '#475569', fontSize: 11 },
   emptyText: { color: '#64748b', textAlign: 'center', marginTop: 40, fontSize: 14 },
   createButton: {
+    flexDirection: 'row',
     backgroundColor: '#3b82f6',
     margin: 16,
     padding: 16,
     borderRadius: 12,
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
   },
   createButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 });

@@ -11,7 +11,7 @@
  * Tap a session to open chat. Long press for terminal view.
  */
 
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -21,6 +21,7 @@ import {
 } from 'react-native';
 import type { SessionListItem, SessionId, WorkspaceListItem, GitStatus } from '@doublt/shared';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { GitStatusBadge } from '../components/GitStatusBadge';
 
 interface Props {
@@ -35,6 +36,7 @@ interface Props {
   connectionState: string;
   gitStatus?: Map<SessionId, GitStatus>;
   onOpenGitStatus?: (id: SessionId) => void;
+  onRefresh?: () => void;
 }
 
 function ContextBar({ usage }: { usage: number }) {
@@ -90,7 +92,7 @@ function SessionItem({
             <Text style={styles.clientBadge}>{session.clientCount} devices</Text>
           )}
           <TouchableOpacity style={styles.terminalButton} onPress={onTerminal}>
-            <Text style={styles.terminalButtonText}>{'>'}_</Text>
+            <Ionicons name="terminal" size={16} color="#22c55e" />
           </TouchableOpacity>
         </View>
       </View>
@@ -116,13 +118,20 @@ export function SessionListScreen({
   connectionState,
   gitStatus,
   onOpenGitStatus,
+  onRefresh,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const [refreshing, setRefreshing] = useState(false);
+  const handleRefresh = useCallback(() => {
+    setRefreshing(true);
+    onRefresh?.();
+    setTimeout(() => setRefreshing(false), 1000);
+  }, [onRefresh]);
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <Text style={styles.backText}>{'<'}</Text>
+          <Ionicons name="chevron-back" size={24} color="#3b82f6" />
         </TouchableOpacity>
         <View style={styles.headerInfo}>
           <Text style={styles.title}>
@@ -157,6 +166,8 @@ export function SessionListScreen({
           />
         )}
         contentContainerStyle={styles.list}
+        onRefresh={onRefresh ? handleRefresh : undefined}
+        refreshing={refreshing}
         ListEmptyComponent={
           <Text style={styles.emptyText}>
             No sessions in this workspace yet.
@@ -165,7 +176,8 @@ export function SessionListScreen({
       />
 
       <TouchableOpacity style={styles.createButton} onPress={onCreateSession}>
-        <Text style={styles.createButtonText}>+ New Session</Text>
+        <Ionicons name="add" size={20} color="#fff" />
+        <Text style={styles.createButtonText}>New Session</Text>
       </TouchableOpacity>
     </View>
   );
@@ -256,11 +268,14 @@ const styles = StyleSheet.create({
   lastActivity: { color: '#475569', fontSize: 11 },
   emptyText: { color: '#64748b', textAlign: 'center', marginTop: 40, fontSize: 14 },
   createButton: {
+    flexDirection: 'row',
     backgroundColor: '#3b82f6',
     margin: 16,
     padding: 14,
     borderRadius: 12,
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
   },
   createButtonText: { color: '#fff', fontSize: 15, fontWeight: '600' },
 });

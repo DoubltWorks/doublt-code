@@ -23,6 +23,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import type { SessionListItem, LongRunningCommand } from '@doublt/shared';
 import { stripAnsi } from '../utils/stripAnsi';
 
@@ -72,7 +73,7 @@ export function TerminalScreen({
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top }]}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <Text style={styles.backText}>{'<'}</Text>
+          <Ionicons name="chevron-back" size={24} color="#3b82f6" />
         </TouchableOpacity>
         <View style={styles.headerInfo}>
           <Text style={styles.headerTitle}>

@@ -12,13 +12,14 @@ import {
   Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import type { SessionTemplate } from '@doublt/shared/src/types/search.js';
 
 interface Props {
   templates: SessionTemplate[];
   onUseTemplate: (templateId: string) => void;
   onCreateTemplate: (name: string, description: string, category: string, prompts: string[]) => void;
-  onDeleteTemplate: (templateId: string) => void;
+  onDeleteTemplate?: (templateId: string) => void;
   onBack: () => void;
 }
 
@@ -93,7 +94,7 @@ export function TemplateScreen({ templates, onUseTemplate, onCreateTemplate, onD
               ))}
             </View>
           )}
-          {item.category === 'custom' && (
+          {item.category === 'custom' && onDeleteTemplate && (
             <TouchableOpacity style={styles.deleteButton} onPress={() => onDeleteTemplate(item.id)}>
               <Text style={styles.deleteButtonText}>Delete</Text>
             </TouchableOpacity>
@@ -107,11 +108,13 @@ export function TemplateScreen({ templates, onUseTemplate, onCreateTemplate, onD
     <KeyboardAvoidingView style={[styles.screen, { paddingTop: insets.top }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <Text style={styles.backButtonText}>{'< Back'}</Text>
+          <Ionicons name="chevron-back" size={20} color="#3b82f6" />
+          <Text style={styles.backButtonText}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.title}>Templates</Text>
         <TouchableOpacity onPress={() => setShowForm(true)} style={styles.newButton}>
-          <Text style={styles.newButtonText}>+ New</Text>
+          <Ionicons name="add" size={18} color="#3b82f6" />
+          <Text style={styles.newButtonText}>New</Text>
         </TouchableOpacity>
       </View>
 
@@ -152,7 +155,7 @@ export function TemplateScreen({ templates, onUseTemplate, onCreateTemplate, onD
             <View style={styles.formHeader}>
               <Text style={styles.formTitle}>New Template</Text>
               <TouchableOpacity onPress={() => setShowForm(false)}>
-                <Text style={styles.formClose}>{'✕'}</Text>
+                <Ionicons name="close" size={20} color="#64748b" />
               </TouchableOpacity>
             </View>
             <TextInput
@@ -211,6 +214,8 @@ const styles = StyleSheet.create({
     borderBottomColor: '#1e293b',
   },
   backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: 4,
     minWidth: 60,
   },
@@ -224,9 +229,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   newButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: 4,
     minWidth: 60,
-    alignItems: 'flex-end',
+    justifyContent: 'flex-end',
   },
   newButtonText: {
     color: '#3b82f6',

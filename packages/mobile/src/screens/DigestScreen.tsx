@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import type { DigestSummary, ActivityEventType, ActivityEvent } from '@doublt/shared/src/types/digest.js';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 
 interface Props {
   digest: DigestSummary | null;
@@ -95,7 +96,7 @@ export function DigestScreen({ digest, onRequestDigest, onViewTimeline, onBack }
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <Text style={styles.backText}>{'<'}</Text>
+          <Ionicons name="chevron-back" size={24} color="#3b82f6" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Catch-up Digest</Text>
       </View>

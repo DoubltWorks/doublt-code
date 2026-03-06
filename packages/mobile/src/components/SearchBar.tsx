@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, TextInput, TouchableOpacity, Text, StyleSheet } from 'react-native';
+import { View, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 interface Props {
   value: string;
@@ -11,7 +12,7 @@ interface Props {
 export function SearchBar({ value, onChangeText, placeholder = 'Search...', autoFocus = false }: Props) {
   return (
     <View style={styles.container}>
-      <Text style={styles.icon}>{'🔍'}</Text>
+      <Ionicons name="search" size={16} color="#94a3b8" style={styles.icon} />
       <TextInput
         style={styles.input}
         value={value}
@@ -25,7 +26,7 @@ export function SearchBar({ value, onChangeText, placeholder = 'Search...', auto
       />
       {value.length > 0 && (
         <TouchableOpacity onPress={() => onChangeText('')} style={styles.clearButton}>
-          <Text style={styles.clearIcon}>{'✕'}</Text>
+          <Ionicons name="close-circle" size={16} color="#64748b" />
         </TouchableOpacity>
       )}
     </View>
