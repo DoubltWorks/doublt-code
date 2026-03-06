@@ -68,6 +68,7 @@ interface DoubltState {
   // Digest & timeline
   digest: DigestSummary | null;
   timeline: TimelineEntry[];
+  timelineHasMore: boolean;
   // Git status
   gitStatus: Map<SessionId, GitStatus>;
   gitLog: GitCommit[];
@@ -83,6 +84,8 @@ interface DoubltState {
   // Sync state
   syncState: SyncState;
 }
+
+const TIMELINE_DEFAULT_LIMIT = 50;
 
 /** Debounce helper: returns a function that delays execution */
 function debounce<T extends (...args: unknown[]) => void>(fn: T, ms: number): T {
@@ -116,6 +119,7 @@ export function useDoublt() {
     tasks: [],
     digest: null,
     timeline: [],
+    timelineHasMore: false,
     gitStatus: new Map(),
     gitLog: [],
     sessionCosts: new Map(),
@@ -473,7 +477,11 @@ export function useDoublt() {
     });
 
     client.on('timelineResult', (entries: TimelineEntry[]) => {
-      setState(prev => ({ ...prev, timeline: entries }));
+      setState(prev => ({
+        ...prev,
+        timeline: entries,
+        timelineHasMore: entries.length >= TIMELINE_DEFAULT_LIMIT,
+      }));
     });
 
     // ─── Git status events ────────────────────────────
@@ -608,6 +616,11 @@ export function useDoublt() {
     if (sessionId) {
       clientRef.current?.sendTerminalInput(sessionId, data);
     }
+  }, [state.activeSessionId]);
+
+  const requestScrollback = useCallback((sessionId?: SessionId) => {
+    const sid = sessionId ?? state.activeSessionId;
+    if (sid) clientRef.current?.requestScrollback(sid);
   }, [state.activeSessionId]);
 
   const markNotificationRead = useCallback((notificationId: string) => {
@@ -770,6 +783,10 @@ export function useDoublt() {
     ? (state.gitStatus.get(state.activeSessionId) ?? null)
     : null;
 
+  const activePendingApprovals = state.activeSessionId
+    ? state.pendingApprovals.filter(t => t.sessionId === state.activeSessionId)
+    : [];
+
   return {
     ...state,
     activeMessages: state.activeSessionId
@@ -783,6 +800,7 @@ export function useDoublt() {
       : state.sessions,
     activeSessionCost,
     activeGitStatus,
+    activePendingApprovals,
     connect,
     connectWithPairing,
     disconnect,
@@ -794,6 +812,7 @@ export function useDoublt() {
     approveTool,
     triggerHandoff,
     sendTerminalInput,
+    requestScrollback,
     markNotificationRead,
     markAllNotificationsRead,
     // Approval

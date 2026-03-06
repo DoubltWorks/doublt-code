@@ -442,6 +442,10 @@ export class DoubltClient extends EventEmitter {
     });
   }
 
+  requestScrollback(sessionId: SessionId, offset?: number): void {
+    this.sendRaw({ type: 'terminal:scrollback:request', sessionId, offset });
+  }
+
   // ─── Push notification API ──────────────────────────
 
   registerPushToken(pushToken: string, platform: 'ios' | 'android'): void {
