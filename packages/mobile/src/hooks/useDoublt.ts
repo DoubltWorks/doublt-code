@@ -83,6 +83,8 @@ interface DoubltState {
   macros: CommandMacro[];
   // Sync state
   syncState: SyncState;
+  // Error
+  lastError: string | null;
 }
 
 const TIMELINE_DEFAULT_LIMIT = 50;
@@ -129,6 +131,7 @@ export function useDoublt() {
     templates: [],
     macros: [],
     syncState: { lastSyncedAt: 0, pendingCount: 0, cacheSize: 0, isOnline: false },
+    lastError: null,
   });
 
   useEffect(() => {
@@ -518,6 +521,12 @@ export function useDoublt() {
       client.requestUsage();
     });
 
+    // ─── Server error events ──────────────────────────
+
+    client.on('serverError', ({ message }: { code: string; message: string }) => {
+      setState(prev => ({ ...prev, lastError: message }));
+    });
+
     // ─── Search & template events ─────────────────────
 
     client.on('searchResults', (results: SearchResult[]) => {
@@ -753,6 +762,12 @@ export function useDoublt() {
     }));
   }, []);
 
+  // ─── Error Actions ──────────────────────────────
+
+  const clearError = useCallback(() => {
+    setState(prev => ({ ...prev, lastError: null }));
+  }, []);
+
   // ─── Offline Actions ────────────────────────────────
 
   const cleanupCache = useCallback(async () => {
@@ -842,6 +857,8 @@ export function useDoublt() {
     // Macros
     saveMacro,
     deleteMacro,
+    // Error
+    clearError,
     // Offline
     cleanupCache,
     clearCache,
