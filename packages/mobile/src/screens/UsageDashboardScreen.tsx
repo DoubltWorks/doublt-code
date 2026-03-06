@@ -15,6 +15,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import type { UsageSummary, BudgetConfig } from '@doublt/shared/src/types/cost.js';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Props {
   usageSummary: UsageSummary | null;
@@ -173,6 +174,7 @@ export function UsageDashboardScreen({
   onRefresh,
   onBack,
 }: Props) {
+  const insets = useSafeAreaInsets();
   const [budgetInput, setBudgetInput] = useState('');
 
   function handleSetBudget() {
@@ -203,7 +205,7 @@ export function UsageDashboardScreen({
   const maxDayCost = days.reduce((m, d) => Math.max(m, d.costUsd), 0);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
@@ -295,7 +297,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 16,
-    paddingTop: 60,
     borderBottomWidth: 1,
     borderBottomColor: '#1e293b',
   },

@@ -14,6 +14,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import type { TimelineEntry, ActivityEventType } from '@doublt/shared/src/types/digest.js';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Props {
   timeline: TimelineEntry[];
@@ -134,11 +135,12 @@ export function ActivityTimelineScreen({
   onSetSessionFilter,
   onBack,
 }: Props) {
+  const insets = useSafeAreaInsets();
   // Derive unique session IDs from the timeline for the filter bar
   const uniqueSessions = Array.from(new Set(timeline.map(e => e.sessionId)));
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
@@ -189,7 +191,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
-    paddingTop: 60,
     borderBottomWidth: 1,
     borderBottomColor: '#1e293b',
   },

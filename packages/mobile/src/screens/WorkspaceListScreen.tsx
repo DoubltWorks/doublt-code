@@ -20,6 +20,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import type { WorkspaceListItem, WorkspaceId } from '@doublt/shared';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Props {
   workspaces: WorkspaceListItem[];
@@ -87,8 +88,9 @@ export function WorkspaceListScreen({
   onOpenNotifications,
   onOpenSearch,
 }: Props) {
+  const insets = useSafeAreaInsets();
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>doubltmux</Text>
@@ -162,7 +164,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 16,
-    paddingTop: 60,
     borderBottomWidth: 1,
     borderBottomColor: '#1e293b',
   },

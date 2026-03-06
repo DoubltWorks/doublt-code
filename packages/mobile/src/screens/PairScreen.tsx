@@ -14,6 +14,7 @@ import {
   TouchableOpacity,
   StyleSheet,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Props {
   onConnect: (serverUrl: string, token: string) => void;
@@ -22,6 +23,7 @@ interface Props {
 }
 
 export function PairScreen({ onConnect, connectionState, error }: Props) {
+  const insets = useSafeAreaInsets();
   const [host, setHost] = useState('');
   const [port, setPort] = useState('9800');
   const [code, setCode] = useState('');
@@ -36,7 +38,7 @@ export function PairScreen({ onConnect, connectionState, error }: Props) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.content}>
+      <View style={[styles.content, { paddingTop: insets.top + 40 }]}>
         <Text style={styles.logo}>doublt</Text>
         <Text style={styles.subtitle}>Connect to your PC</Text>
 
@@ -100,7 +102,6 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     padding: 24,
-    paddingTop: 100,
     alignItems: 'center',
   },
   logo: {

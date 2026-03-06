@@ -15,6 +15,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import type { Task, TaskPriority, TaskStatus } from '@doublt/shared/src/types/taskqueue.js';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Props {
   tasks: Task[];
@@ -121,6 +122,7 @@ export function TaskQueueScreen({
   onMoveDown,
   onBack,
 }: Props) {
+  const insets = useSafeAreaInsets();
   const [newTitle, setNewTitle] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [newPriority, setNewPriority] = useState<TaskPriority>('normal');
@@ -140,7 +142,7 @@ export function TaskQueueScreen({
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Text style={styles.backText}>{'<'}</Text>
@@ -251,7 +253,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
-    paddingTop: 60,
     borderBottomWidth: 1,
     borderBottomColor: '#1e293b',
   },

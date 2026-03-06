@@ -11,6 +11,7 @@ import {
   Platform,
   Modal,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { SessionTemplate } from '@doublt/shared/src/types/search.js';
 
 interface Props {
@@ -36,6 +37,7 @@ function getCategoryColor(cat: Category): string {
 }
 
 export function TemplateScreen({ templates, onUseTemplate, onCreateTemplate, onDeleteTemplate, onBack }: Props) {
+  const insets = useSafeAreaInsets();
   const [activeCategory, setActiveCategory] = useState<Category>('code_review');
   const [showForm, setShowForm] = useState(false);
   const [formName, setFormName] = useState('');
@@ -102,7 +104,7 @@ export function TemplateScreen({ templates, onUseTemplate, onCreateTemplate, onD
   };
 
   return (
-    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={[styles.screen, { paddingTop: insets.top }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Text style={styles.backButtonText}>{'< Back'}</Text>

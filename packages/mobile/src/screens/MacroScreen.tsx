@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { CommandMacro } from '@doublt/shared/src/types/quickaction.js';
 
 interface Props {
@@ -20,6 +21,7 @@ interface Props {
 }
 
 export function MacroScreen({ macros, onSaveMacro, onDeleteMacro, onBack }: Props) {
+  const insets = useSafeAreaInsets();
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState('');
   const [command, setCommand] = useState('');
@@ -56,7 +58,7 @@ export function MacroScreen({ macros, onSaveMacro, onDeleteMacro, onBack }: Prop
 
   return (
     <KeyboardAvoidingView
-      style={styles.screen}
+      style={[styles.screen, { paddingTop: insets.top }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.header}>
