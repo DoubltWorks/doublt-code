@@ -44,6 +44,7 @@ import { SearchScreen } from './screens/SearchScreen';
 import { TemplateScreen } from './screens/TemplateScreen';
 import { MacroScreen } from './screens/MacroScreen';
 import { ErrorBanner } from './components/ErrorBanner';
+import { ConnectionBanner } from './components/ConnectionBanner';
 
 type Screen =
   | 'pair'
@@ -143,6 +144,7 @@ export default function App() {
             unreadNotificationCount={doublt.unreadNotificationCount}
             onOpenNotifications={() => setCurrentScreen('notifications')}
             onOpenSearch={() => setCurrentScreen('search')}
+            onRefresh={() => doublt.listWorkspaces()}
           />
         );
 
@@ -159,6 +161,7 @@ export default function App() {
             onBack={() => setCurrentScreen('workspaces')}
             connectionState={doublt.connectionState}
             gitStatus={doublt.gitStatus}
+            onRefresh={() => doublt.selectWorkspace(doublt.activeWorkspaceId ?? '')}
             onOpenGitStatus={(sessionId) => {
               doublt.selectSession(sessionId);
               doublt.requestGitStatus(sessionId);
@@ -222,6 +225,7 @@ export default function App() {
             onDecide={doublt.decideApproval}
             onApproveAll={() => doublt.decideAllApprovals(true)}
             onBack={() => setCurrentScreen('chat')}
+            onRefresh={() => doublt.listApprovalQueue()}
           />
         );
 
@@ -230,7 +234,15 @@ export default function App() {
           <ApprovalPolicyScreen
             policies={doublt.policies}
             activePolicyId={doublt.activePolicy?.id ?? null}
-            onSetActive={() => {}}
+            onSetActive={(policyId) => {
+              const policy = doublt.policies.find(p => p.id === policyId);
+              if (policy) {
+                const presetName = policy.name.toLowerCase();
+                if (['conservative', 'moderate', 'permissive', 'full_auto'].includes(presetName)) {
+                  doublt.setApprovalPreset(presetName as 'conservative' | 'moderate' | 'permissive' | 'full_auto');
+                }
+              }
+            }}
             onApplyPreset={doublt.setApprovalPreset}
             onBack={() => setCurrentScreen('approvalQueue')}
           />
@@ -259,6 +271,7 @@ export default function App() {
               }
             }}
             onBack={() => setCurrentScreen('chat')}
+            onRefresh={() => doublt.listTasks()}
           />
         );
 
@@ -292,7 +305,9 @@ export default function App() {
             gitStatus={doublt.activeGitStatus}
             gitLog={doublt.gitLog}
             onRefresh={() => doublt.requestGitStatus()}
-            onViewDiff={() => {}}
+            onViewDiff={() => {
+              doublt.requestGitDiff();
+            }}
             onBack={() => setCurrentScreen('sessions')}
           />
         );
@@ -324,7 +339,7 @@ export default function App() {
             templates={doublt.templates}
             onUseTemplate={doublt.useTemplate}
             onCreateTemplate={doublt.createTemplate}
-            onDeleteTemplate={() => {}}
+            onDeleteTemplate={undefined}
             onBack={() => setCurrentScreen('search')}
           />
         );
@@ -344,6 +359,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       {renderScreen()}
+      <ConnectionBanner connectionState={doublt.connectionState} currentScreen={currentScreen} />
       <ErrorBanner message={doublt.lastError} onDismiss={doublt.clearError} />
     </SafeAreaProvider>
   );

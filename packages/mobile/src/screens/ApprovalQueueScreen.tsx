@@ -5,7 +5,7 @@
  * approve/deny buttons. Matches the dark theme used across the mobile app.
  */
 
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,12 +15,14 @@ import {
 } from 'react-native';
 import type { ApprovalQueueItem } from '@doublt/shared/src/types/approval.js';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 
 interface Props {
   approvalQueue: ApprovalQueueItem[];
   onDecide: (queueItemId: string, approved: boolean) => void;
   onApproveAll: () => void;
   onBack: () => void;
+  onRefresh?: () => void;
 }
 
 function timeAgo(ts: number): string {
@@ -79,16 +81,22 @@ function ApprovalItem({
   );
 }
 
-export function ApprovalQueueScreen({ approvalQueue, onDecide, onApproveAll, onBack }: Props) {
+export function ApprovalQueueScreen({ approvalQueue, onDecide, onApproveAll, onBack, onRefresh }: Props) {
   const insets = useSafeAreaInsets();
   const pending = approvalQueue.filter(i => i.status === 'pending');
+  const [refreshing, setRefreshing] = useState(false);
+  const handleRefresh = useCallback(() => {
+    setRefreshing(true);
+    onRefresh?.();
+    setTimeout(() => setRefreshing(false), 1000);
+  }, [onRefresh]);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <Text style={styles.backText}>{'<'}</Text>
+          <Ionicons name="chevron-back" size={24} color="#3b82f6" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Approval Queue</Text>
         {pending.length > 0 && (
@@ -109,6 +117,8 @@ export function ApprovalQueueScreen({ approvalQueue, onDecide, onApproveAll, onB
           keyExtractor={(item: ApprovalQueueItem) => item.id}
           renderItem={({ item }: { item: ApprovalQueueItem }) => <ApprovalItem item={item} onDecide={onDecide} />}
           contentContainerStyle={styles.listContent}
+          onRefresh={onRefresh ? handleRefresh : undefined}
+          refreshing={refreshing}
         />
       )}
     </View>

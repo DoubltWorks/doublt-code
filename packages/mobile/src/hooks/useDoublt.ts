@@ -149,10 +149,11 @@ export function useDoublt() {
       await client.initOffline();
 
       // Load cached data into initial state
-      const [cachedSessions, cachedWorkspaces, cachedNotifications] = await Promise.all([
+      const [cachedSessions, cachedWorkspaces, cachedNotifications, cachedMacros] = await Promise.all([
         client.offlineStore.loadMetadata<SessionListItem[]>('sessions'),
         client.offlineStore.loadMetadata<WorkspaceListItem[]>('workspaces'),
         client.offlineStore.loadNotifications(),
+        client.offlineStore.loadMacros(),
       ]);
 
       const syncState = await client.offlineStore.getSyncState(
@@ -165,6 +166,7 @@ export function useDoublt() {
         sessions: cachedSessions ?? prev.sessions,
         workspaces: cachedWorkspaces ?? prev.workspaces,
         activeWorkspaceId: cachedWorkspaces?.length ? cachedWorkspaces[0].id : prev.activeWorkspaceId,
+        macros: cachedMacros.length > 0 ? cachedMacros : prev.macros,
         syncState,
       }));
 
@@ -690,6 +692,14 @@ export function useDoublt() {
     clientRef.current?.reorderTasks(taskIds);
   }, []);
 
+  const listWorkspaces = useCallback(() => {
+    clientRef.current?.listWorkspaces();
+  }, []);
+
+  const listTasks = useCallback(() => {
+    clientRef.current?.listTasks();
+  }, []);
+
   // ─── Digest & Timeline Actions ──────────────────────
 
   const requestDigest = useCallback((since: number) => {
@@ -710,6 +720,11 @@ export function useDoublt() {
   const requestGitLog = useCallback((sessionId?: SessionId) => {
     const sid = sessionId ?? state.activeSessionId;
     if (sid) clientRef.current?.requestGitLog(sid);
+  }, [state.activeSessionId]);
+
+  const requestGitDiff = useCallback((sessionId?: SessionId, filePath?: string, staged?: boolean) => {
+    const sid = sessionId ?? state.activeSessionId;
+    if (sid) clientRef.current?.requestGitDiff(sid, filePath, staged);
   }, [state.activeSessionId]);
 
   // ─── Cost & Usage Actions ───────────────────────────
@@ -752,14 +767,19 @@ export function useDoublt() {
       usageCount: 0,
       createdAt: Date.now(),
     };
-    setState(prev => ({ ...prev, macros: [...prev.macros, macro] }));
+    setState(prev => {
+      const macros = [...prev.macros, macro];
+      void clientRef.current?.offlineStore.cacheMacros(macros);
+      return { ...prev, macros };
+    });
   }, []);
 
   const deleteMacro = useCallback((macroId: string) => {
-    setState(prev => ({
-      ...prev,
-      macros: prev.macros.filter(m => m.id !== macroId),
-    }));
+    setState(prev => {
+      const macros = prev.macros.filter(m => m.id !== macroId);
+      void clientRef.current?.offlineStore.cacheMacros(macros);
+      return { ...prev, macros };
+    });
   }, []);
 
   // ─── Error Actions ──────────────────────────────
@@ -840,12 +860,16 @@ export function useDoublt() {
     cancelTask,
     deleteTask,
     reorderTasks,
+    listTasks,
+    // Data refresh
+    listWorkspaces,
     // Digest
     requestDigest,
     requestTimeline,
     // Git
     requestGitStatus,
     requestGitLog,
+    requestGitDiff,
     // Cost
     requestUsage,
     setBudget,
