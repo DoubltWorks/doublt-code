@@ -93,6 +93,7 @@ export default function App() {
 
   const handleOpenTerminal = (sessionId: string) => {
     doublt.selectSession(sessionId);
+    doublt.requestScrollback(sessionId);
     setCurrentScreen('terminal');
   };
 
@@ -171,7 +172,7 @@ export default function App() {
           <ChatScreen
             sessionInfo={activeSession}
             messages={doublt.activeMessages}
-            pendingApprovals={doublt.pendingApprovals}
+            pendingApprovals={doublt.activePendingApprovals}
             onSendMessage={doublt.sendMessage}
             onApproveTool={doublt.approveTool}
             onHandoff={() => handleHandoff()}
@@ -278,7 +279,7 @@ export default function App() {
           <ActivityTimelineScreen
             timeline={doublt.timeline}
             onLoadMore={() => doublt.requestTimeline()}
-            hasMore={false}
+            hasMore={doublt.timelineHasMore}
             onSetSessionFilter={(sessionId) => doublt.requestTimeline(sessionId)}
             onBack={() => setCurrentScreen('digest')}
           />

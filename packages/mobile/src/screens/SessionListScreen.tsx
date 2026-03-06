@@ -53,12 +53,14 @@ function ContextBar({ usage }: { usage: number }) {
 function SessionItem({
   session,
   isActive,
+  gitStatus,
   onPress,
   onLongPress,
   onTerminal,
 }: {
   session: SessionListItem;
   isActive: boolean;
+  gitStatus: GitStatus | null;
   onPress: () => void;
   onLongPress: () => void;
   onTerminal: () => void;
@@ -92,7 +94,7 @@ function SessionItem({
         </View>
       </View>
       <ContextBar usage={session.contextUsage} />
-      <GitStatusBadge gitStatus={null} />
+      <GitStatusBadge gitStatus={gitStatus} />
       <Text style={styles.sessionCwd}>{session.cwd}</Text>
       <Text style={styles.lastActivity}>
         {formatTimeAgo(session.lastActivityAt)}
@@ -146,6 +148,7 @@ export function SessionListScreen({
           <SessionItem
             session={item}
             isActive={item.id === activeSessionId}
+            gitStatus={gitStatus?.get(item.id) ?? null}
             onPress={() => onSelectSession(item.id)}
             onLongPress={() => onHandoff(item.id)}
             onTerminal={() => onOpenTerminal(item.id)}
