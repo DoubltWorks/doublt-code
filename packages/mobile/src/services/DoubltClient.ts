@@ -160,6 +160,8 @@ export class DoubltClient extends EventEmitter {
 
           this.listSessions();
           this.listWorkspaces();
+          this.listTasks();
+          this.requestUsage();
           void this.offlineStore.setLastSynced();
         } else {
           this.emit('authFailed', msg.error);

@@ -297,6 +297,50 @@ export function useDoublt() {
       });
     });
 
+    // ─── Chat stream events ───────────────────────────
+
+    client.on('chatStream', ({ sessionId, messageId, delta, done }: {
+      sessionId: string; messageId: string; delta: string; done: boolean;
+    }) => {
+      setState(prev => {
+        const messages = new Map(prev.messages);
+        const sessionMsgs = [...(messages.get(sessionId) ?? [])];
+        const existingIdx = sessionMsgs.findIndex(m => m.id === messageId);
+
+        if (existingIdx >= 0) {
+          const existing = sessionMsgs[existingIdx];
+          // Skip if already finalized by a chat:message event
+          if (!existing.partial && existing.content.length > 0) {
+            return prev;
+          }
+          sessionMsgs[existingIdx] = {
+            ...existing,
+            content: existing.content + delta,
+            partial: !done,
+          };
+        } else {
+          // Create new partial message
+          sessionMsgs.push({
+            id: messageId,
+            sessionId,
+            role: 'assistant' as const,
+            content: delta,
+            timestamp: Date.now(),
+            partial: !done,
+          });
+        }
+
+        messages.set(sessionId, sessionMsgs);
+
+        // Only cache when message is complete to avoid thrashing storage
+        if (done) {
+          saveMessagesCache(sessionId, sessionMsgs);
+        }
+
+        return { ...prev, messages };
+      });
+    });
+
     // ─── Tool events ──────────────────────────────────
 
     client.on('toolUse', (tool: ToolUseMessage) => {
