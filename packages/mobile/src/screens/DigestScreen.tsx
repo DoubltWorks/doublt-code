@@ -16,6 +16,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import type { DigestSummary, ActivityEventType, ActivityEvent } from '@doublt/shared/src/types/digest.js';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Props {
   digest: DigestSummary | null;
@@ -80,6 +81,7 @@ function StatCard({ label, value, accent }: { label: string; value: number; acce
 }
 
 export function DigestScreen({ digest, onRequestDigest, onViewTimeline, onBack }: Props) {
+  const insets = useSafeAreaInsets();
   const [selectedPeriodIndex, setSelectedPeriodIndex] = useState(0);
 
   function handleSelectPeriod(index: number) {
@@ -89,7 +91,7 @@ export function DigestScreen({ digest, onRequestDigest, onViewTimeline, onBack }
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
@@ -182,7 +184,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
-    paddingTop: 60,
     borderBottomWidth: 1,
     borderBottomColor: '#1e293b',
   },

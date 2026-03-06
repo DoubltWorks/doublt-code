@@ -21,6 +21,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import type { InAppNotification } from '../services/NotificationService';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Props {
   notifications: InAppNotification[];
@@ -91,8 +92,9 @@ export function NotificationScreen({
   onMarkAllRead,
   onBack,
 }: Props) {
+  const insets = useSafeAreaInsets();
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Text style={styles.backText}>{'<'}</Text>
@@ -142,7 +144,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
-    paddingTop: 60,
     borderBottomWidth: 1,
     borderBottomColor: '#1e293b',
   },

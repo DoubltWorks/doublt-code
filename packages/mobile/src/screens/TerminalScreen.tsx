@@ -22,6 +22,7 @@ import {
   Platform,
   StyleSheet,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { SessionListItem, LongRunningCommand } from '@doublt/shared';
 import { stripAnsi } from '../utils/stripAnsi';
 
@@ -40,6 +41,7 @@ export function TerminalScreen({
   onSendInput,
   onBack,
 }: Props) {
+  const insets = useSafeAreaInsets();
   const cleanOutput = useMemo(() => stripAnsi(terminalOutput), [terminalOutput]);
   const [input, setInput] = useState('');
   const scrollRef = useRef<ScrollView>(null);
@@ -68,7 +70,7 @@ export function TerminalScreen({
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top }]}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Text style={styles.backText}>{'<'}</Text>
         </TouchableOpacity>
@@ -151,7 +153,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 12,
-    paddingTop: 56,
     backgroundColor: '#0f172a',
     borderBottomWidth: 1,
     borderBottomColor: '#1e293b',

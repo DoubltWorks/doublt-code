@@ -7,6 +7,7 @@ import {
   StyleSheet,
   ScrollView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { SearchResult, SearchResultType } from '@doublt/shared/src/types/search.js';
 import { SearchBar } from '../components/SearchBar.js';
 
@@ -56,6 +57,7 @@ function ScoreBar({ score }: { score: number }) {
 }
 
 export function SearchScreen({ searchResults, onSearch, onSelectResult, onBack }: Props) {
+  const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -112,7 +114,7 @@ export function SearchScreen({ searchResults, onSearch, onSelectResult, onBack }
   };
 
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Text style={styles.backButtonText}>{'< Back'}</Text>

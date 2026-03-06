@@ -23,6 +23,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import type { ChatMessage, ToolUseMessage, SessionListItem, CommandMacro } from '@doublt/shared';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CostBadge } from '../components/CostBadge';
 import { QuickActionBar } from '../components/QuickActionBar';
 import { VoiceInputButton } from '../components/VoiceInputButton';
@@ -104,6 +105,7 @@ export function ChatScreen({
   onOpenDigest,
   onOpenUsage,
 }: Props) {
+  const insets = useSafeAreaInsets();
   const [input, setInput] = useState('');
   const flatListRef = useRef<FlatList>(null);
 
@@ -128,7 +130,7 @@ export function ChatScreen({
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[styles.container, { paddingTop: insets.top }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={0}
     >
@@ -223,7 +225,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
-    paddingTop: 60,
     borderBottomWidth: 1,
     borderBottomColor: '#1e293b',
   },

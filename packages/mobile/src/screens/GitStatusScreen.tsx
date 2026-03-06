@@ -7,6 +7,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import type { GitStatus, GitCommit } from '@doublt/shared';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Props {
   gitStatus: GitStatus | null;
@@ -60,8 +61,9 @@ function CommitItem({ commit }: { commit: GitCommit }) {
 }
 
 export function GitStatusScreen({ gitStatus, gitLog, onRefresh, onViewDiff, onBack }: Props) {
+  const insets = useSafeAreaInsets();
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Text style={styles.backText}>{'<'}</Text>
@@ -166,7 +168,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
-    paddingTop: 60,
     borderBottomWidth: 1,
     borderBottomColor: '#1e293b',
   },
