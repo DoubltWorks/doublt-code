@@ -203,8 +203,7 @@ export function ChatScreen({
           placeholderTextColor="#64748b"
           multiline
           maxLength={10000}
-          returnKeyType="send"
-          onSubmitEditing={handleSend}
+          blurOnSubmit={false}
         />
         <TouchableOpacity
           style={[styles.sendButton, !input.trim() && styles.sendButtonDisabled]}

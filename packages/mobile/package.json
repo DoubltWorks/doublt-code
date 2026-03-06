@@ -7,7 +7,8 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "build": "echo 'Use expo build'"
+    "build": "echo 'Use expo build'",
+    "test": "vitest run"
   },
   "dependencies": {
     "@doublt/shared": "workspace:*",

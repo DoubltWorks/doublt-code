@@ -11,7 +11,7 @@
  * the output is visible on mobile in real-time.
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -23,6 +23,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import type { SessionListItem, LongRunningCommand } from '@doublt/shared';
+import { stripAnsi } from '../utils/stripAnsi';
 
 interface Props {
   sessionInfo: SessionListItem | null;
@@ -39,6 +40,7 @@ export function TerminalScreen({
   onSendInput,
   onBack,
 }: Props) {
+  const cleanOutput = useMemo(() => stripAnsi(terminalOutput), [terminalOutput]);
   const [input, setInput] = useState('');
   const scrollRef = useRef<ScrollView>(null);
 
@@ -106,7 +108,7 @@ export function TerminalScreen({
         contentContainerStyle={styles.terminalContent}
       >
         <Text style={styles.terminalText} selectable>
-          {terminalOutput || 'Waiting for terminal output...'}
+          {cleanOutput || 'Waiting for terminal output...'}
         </Text>
       </ScrollView>
 
