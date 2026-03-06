@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface ErrorBannerProps {
   message: string | null;
@@ -10,6 +11,7 @@ interface ErrorBannerProps {
 const AUTO_DISMISS_MS = 3000;
 
 export function ErrorBanner({ message, onDismiss }: ErrorBannerProps) {
+  const insets = useSafeAreaInsets();
   const timerRef = useRef<ReturnType<typeof setTimeout>>();
   const opacity = useRef(new Animated.Value(0)).current;
 
@@ -40,7 +42,7 @@ export function ErrorBanner({ message, onDismiss }: ErrorBannerProps) {
   if (!message) return null;
 
   return (
-    <Animated.View style={[styles.container, { opacity }]}>
+    <Animated.View style={[styles.container, { opacity, top: insets.top + 8 }]}>
       <Text style={styles.message} numberOfLines={2}>{message}</Text>
       <TouchableOpacity onPress={onDismiss} style={styles.closeButton}>
         <Ionicons name="close" size={18} color="#FFFFFF" />

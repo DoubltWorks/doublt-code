@@ -24,6 +24,7 @@ import {
 } from 'react-native';
 import type { ChatMessage, ToolUseMessage, SessionListItem, CommandMacro } from '@doublt/shared';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { CostBadge } from '../components/CostBadge';
 import { QuickActionBar } from '../components/QuickActionBar';
 import { VoiceInputButton } from '../components/VoiceInputButton';
@@ -137,7 +138,7 @@ export function ChatScreen({
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <Text style={styles.backText}>{'<'}</Text>
+          <Ionicons name="chevron-back" size={24} color="#3b82f6" />
         </TouchableOpacity>
         <View style={styles.headerInfo}>
           <Text style={styles.headerTitle}>{sessionInfo?.name ?? 'Session'}</Text>
@@ -176,6 +177,7 @@ export function ChatScreen({
         renderItem={({ item }) => <MessageBubble message={item} />}
         contentContainerStyle={styles.messageList}
         style={styles.messageListContainer}
+        keyboardDismissMode="on-drag"
       />
 
       {/* Quick Actions */}
@@ -183,7 +185,9 @@ export function ChatScreen({
         actions={[]}
         macros={macros}
         onAction={(action) => {
-          if (action.action === 'chat_send' && action.payload) {
+          if (action.action === 'terminal_command' && action.payload) {
+            onSendMessage(action.payload);
+          } else if (action.action === 'chat_send' && action.payload) {
             onSendMessage(action.payload);
           } else if (action.action === 'trigger_handoff') {
             onHandoff();
