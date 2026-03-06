@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 interface ErrorBannerProps {
   message: string | null;
@@ -42,7 +43,7 @@ export function ErrorBanner({ message, onDismiss }: ErrorBannerProps) {
     <Animated.View style={[styles.container, { opacity }]}>
       <Text style={styles.message} numberOfLines={2}>{message}</Text>
       <TouchableOpacity onPress={onDismiss} style={styles.closeButton}>
-        <Text style={styles.closeText}>X</Text>
+        <Ionicons name="close" size={18} color="#FFFFFF" />
       </TouchableOpacity>
     </Animated.View>
   );

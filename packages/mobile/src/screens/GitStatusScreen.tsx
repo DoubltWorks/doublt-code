@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import type { GitStatus, GitCommit } from '@doublt/shared';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 
 interface Props {
   gitStatus: GitStatus | null;
@@ -66,7 +67,7 @@ export function GitStatusScreen({ gitStatus, gitLog, onRefresh, onViewDiff, onBa
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <Text style={styles.backText}>{'<'}</Text>
+          <Ionicons name="chevron-back" size={24} color="#3b82f6" />
         </TouchableOpacity>
         <Text style={styles.title}>Git Status</Text>
         <View style={styles.headerActions}>

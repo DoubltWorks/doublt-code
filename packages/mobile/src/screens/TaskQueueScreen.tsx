@@ -5,7 +5,7 @@
  * and a form to add new tasks.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import type { Task, TaskPriority, TaskStatus } from '@doublt/shared/src/types/taskqueue.js';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 
 interface Props {
   tasks: Task[];
@@ -24,6 +25,7 @@ interface Props {
   onMoveUp: (taskId: string) => void;
   onMoveDown: (taskId: string) => void;
   onBack: () => void;
+  onRefresh?: () => void;
 }
 
 const PRIORITY_COLORS: Record<TaskPriority, string> = {
@@ -96,10 +98,10 @@ function TaskItem({
           {isQueued && (
             <>
               <TouchableOpacity style={styles.reorderButton} onPress={onMoveUp}>
-                <Text style={styles.reorderText}>▲</Text>
+                <Ionicons name="chevron-up" size={16} color="#94a3b8" />
               </TouchableOpacity>
               <TouchableOpacity style={styles.reorderButton} onPress={onMoveDown}>
-                <Text style={styles.reorderText}>▼</Text>
+                <Ionicons name="chevron-down" size={16} color="#94a3b8" />
               </TouchableOpacity>
             </>
           )}
@@ -121,8 +123,15 @@ export function TaskQueueScreen({
   onMoveUp,
   onMoveDown,
   onBack,
+  onRefresh,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const [refreshing, setRefreshing] = useState(false);
+  const handleRefresh = useCallback(() => {
+    setRefreshing(true);
+    onRefresh?.();
+    setTimeout(() => setRefreshing(false), 1000);
+  }, [onRefresh]);
   const [newTitle, setNewTitle] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [newPriority, setNewPriority] = useState<TaskPriority>('normal');
@@ -145,14 +154,15 @@ export function TaskQueueScreen({
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <Text style={styles.backText}>{'<'}</Text>
+          <Ionicons name="chevron-back" size={24} color="#3b82f6" />
         </TouchableOpacity>
         <Text style={styles.title}>Task Queue</Text>
         <TouchableOpacity
           style={styles.addButton}
           onPress={() => setShowForm((v) => !v)}
         >
-          <Text style={styles.addButtonText}>+ New</Text>
+          <Ionicons name="add" size={16} color="#fff" />
+          <Text style={styles.addButtonText}>New</Text>
         </TouchableOpacity>
       </View>
 
@@ -185,6 +195,8 @@ export function TaskQueueScreen({
           />
         )}
         contentContainerStyle={styles.list}
+        onRefresh={onRefresh ? handleRefresh : undefined}
+        refreshing={refreshing}
         ListEmptyComponent={
           <Text style={styles.emptyText}>
             No tasks in queue. Add your first task!
@@ -260,10 +272,13 @@ const styles = StyleSheet.create({
   backText: { color: '#3b82f6', fontSize: 20 },
   title: { flex: 1, fontSize: 20, fontWeight: 'bold', color: '#f8fafc' },
   addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#3b82f6',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
+    gap: 2,
   },
   addButtonText: { color: '#fff', fontSize: 14, fontWeight: '600' },
 

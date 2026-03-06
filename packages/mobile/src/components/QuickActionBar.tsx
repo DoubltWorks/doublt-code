@@ -1,6 +1,15 @@
 import React from 'react';
 import { ScrollView, TouchableOpacity, Text, StyleSheet, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import type { QuickAction, CommandMacro } from '@doublt/shared';
+
+const ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
+  test: 'flask',
+  build: 'hammer',
+  git: 'git-branch',
+  check: 'checkmark',
+  swap: 'swap-horizontal',
+};
 
 const DEFAULT_ACTIONS: QuickAction[] = [
   { id: 'qa-1', label: 'Run tests', icon: 'test', action: 'terminal_command', payload: 'npm test' },
@@ -32,7 +41,11 @@ export function QuickActionBar({ actions, macros, onAction, onMacro }: Props) {
           style={styles.actionPill}
           onPress={() => onAction(action)}
         >
-          <Text style={styles.pillIcon}>{action.icon}</Text>
+          <Ionicons
+            name={ICON_MAP[action.icon] ?? 'ellipse'}
+            size={14}
+            color="#f8fafc"
+          />
           <Text style={styles.actionLabel}>{action.label}</Text>
         </TouchableOpacity>
       ))}
@@ -42,7 +55,7 @@ export function QuickActionBar({ actions, macros, onAction, onMacro }: Props) {
           style={styles.macroPill}
           onPress={() => onMacro(macro)}
         >
-          <Text style={styles.macroIcon}>{'cmd'}</Text>
+          <Ionicons name="terminal" size={14} color="#3b82f6" />
           <Text style={styles.macroLabel}>{macro.name}</Text>
         </TouchableOpacity>
       ))}
@@ -67,10 +80,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     gap: 6,
   },
-  pillIcon: {
-    color: '#f8fafc',
-    fontSize: 12,
-  },
   actionLabel: {
     color: '#f8fafc',
     fontSize: 13,
@@ -84,10 +93,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     gap: 6,
-  },
-  macroIcon: {
-    color: '#3b82f6',
-    fontSize: 12,
   },
   macroLabel: {
     color: '#3b82f6',

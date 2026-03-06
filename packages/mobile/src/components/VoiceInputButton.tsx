@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { TouchableOpacity, Text, View, Animated, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { VoiceService } from '../services/VoiceService';
 
 interface Props {
@@ -70,7 +71,7 @@ export function VoiceInputButton({ onVoiceResult, size = 64 }: Props) {
             isListening ? styles.buttonListening : styles.buttonIdle,
           ]}
         >
-          <Text style={styles.icon}>{isListening ? '...' : 'mic'}</Text>
+          <Ionicons name={isListening ? 'ellipsis-horizontal' : 'mic'} size={18} color="#f8fafc" />
         </TouchableOpacity>
       </Animated.View>
       {isListening && partialText.length > 0 && (

@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import type { UsageSummary, BudgetConfig } from '@doublt/shared/src/types/cost.js';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 
 interface Props {
   usageSummary: UsageSummary | null;
@@ -209,7 +210,7 @@ export function UsageDashboardScreen({
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <Text style={styles.backText}>{'<'}</Text>
+          <Ionicons name="chevron-back" size={24} color="#3b82f6" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Usage & Costs</Text>
         <TouchableOpacity onPress={onRefresh} style={styles.refreshButton}>

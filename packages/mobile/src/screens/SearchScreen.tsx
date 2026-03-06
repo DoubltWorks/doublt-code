@@ -8,6 +8,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import type { SearchResult, SearchResultType } from '@doublt/shared/src/types/search.js';
 import { SearchBar } from '../components/SearchBar.js';
 
@@ -20,10 +21,10 @@ interface Props {
 
 type FilterType = 'all' | SearchResultType;
 
-const TYPE_ICONS: Record<SearchResultType, string> = {
-  message: '💬',
-  session: '🪟',
-  workspace: '📁',
+const TYPE_ICON_NAMES: Record<SearchResultType, keyof typeof Ionicons.glyphMap> = {
+  message: 'chatbubble-outline',
+  session: 'grid-outline',
+  workspace: 'folder-outline',
 };
 
 const FILTERS: { label: string; value: FilterType }[] = [
@@ -79,7 +80,7 @@ export function SearchScreen({ searchResults, onSearch, onSelectResult, onBack }
   const renderResult = ({ item }: { item: SearchResult }) => (
     <TouchableOpacity style={styles.resultCard} onPress={() => onSelectResult(item)} activeOpacity={0.7}>
       <View style={styles.resultRow}>
-        <Text style={styles.typeIcon}>{TYPE_ICONS[item.type]}</Text>
+        <Ionicons name={TYPE_ICON_NAMES[item.type]} size={20} color="#94a3b8" style={styles.typeIcon} />
         <View style={styles.resultContent}>
           <Text style={styles.resultTitle} numberOfLines={1}>
             {item.title}
@@ -100,14 +101,14 @@ export function SearchScreen({ searchResults, onSearch, onSelectResult, onBack }
     if (query.length === 0) {
       return (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyIcon}>{'🔍'}</Text>
+          <Ionicons name="search" size={40} color="#64748b" style={styles.emptyIcon} />
           <Text style={styles.emptyText}>Search across all your sessions</Text>
         </View>
       );
     }
     return (
       <View style={styles.emptyState}>
-        <Text style={styles.emptyIcon}>{'😶'}</Text>
+        <Ionicons name="sad-outline" size={40} color="#64748b" style={styles.emptyIcon} />
         <Text style={styles.emptyText}>No results found for &apos;{query}&apos;</Text>
       </View>
     );
@@ -117,7 +118,8 @@ export function SearchScreen({ searchResults, onSearch, onSelectResult, onBack }
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <Text style={styles.backButtonText}>{'< Back'}</Text>
+          <Ionicons name="chevron-back" size={20} color="#3b82f6" />
+          <Text style={styles.backButtonText}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.title}>Search</Text>
         <View style={styles.headerSpacer} />
@@ -172,6 +174,8 @@ const styles = StyleSheet.create({
     borderBottomColor: '#1e293b',
   },
   backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: 4,
     minWidth: 60,
   },

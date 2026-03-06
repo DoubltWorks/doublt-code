@@ -11,6 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import type { CommandMacro } from '@doublt/shared/src/types/quickaction.js';
 
 interface Props {
@@ -63,11 +64,13 @@ export function MacroScreen({ macros, onSaveMacro, onDeleteMacro, onBack }: Prop
     >
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <Text style={styles.backButtonText}>{'< Back'}</Text>
+          <Ionicons name="chevron-back" size={20} color="#3b82f6" />
+          <Text style={styles.backButtonText}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.title}>Command Macros</Text>
         <TouchableOpacity onPress={() => setShowForm((v: boolean) => !v)} style={styles.newButton}>
-          <Text style={styles.newButtonText}>+ New</Text>
+          <Ionicons name="add" size={18} color="#3b82f6" />
+          <Text style={styles.newButtonText}>New</Text>
         </TouchableOpacity>
       </View>
 
@@ -159,6 +162,8 @@ const styles = StyleSheet.create({
     borderBottomColor: '#1e293b',
   },
   backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: 4,
   },
   backButtonText: {
@@ -171,6 +176,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   newButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: 4,
   },
   newButtonText: {
