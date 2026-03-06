@@ -43,6 +43,7 @@ import { UsageDashboardScreen } from './screens/UsageDashboardScreen';
 import { SearchScreen } from './screens/SearchScreen';
 import { TemplateScreen } from './screens/TemplateScreen';
 import { MacroScreen } from './screens/MacroScreen';
+import { ErrorBanner } from './components/ErrorBanner';
 
 type Screen =
   | 'pair'
@@ -343,6 +344,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       {renderScreen()}
+      <ErrorBanner message={doublt.lastError} onDismiss={doublt.clearError} />
     </SafeAreaProvider>
   );
 }
