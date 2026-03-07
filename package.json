@@ -1,6 +1,6 @@
 {
   "name": "@doubltworks/tt-code",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Multi-session coding bridge with mobile sync — cmux-style session management",
   "type": "module",
   "bin": {
