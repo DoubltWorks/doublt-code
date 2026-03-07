@@ -86,10 +86,20 @@ export function Terminal({ sessionId, isActive, send, subscribe, onFocus }: Term
       });
     });
 
+    // Track whether scrollback has been restored to avoid writing output twice
+    let scrollbackRestored = false;
+
     // Listen for terminal output from server
     const unsubscribe = subscribe((msg) => {
       if (msg.type === 'terminal:output' && msg.output.sessionId === sessionId) {
         term.write(msg.output.data);
+      }
+      // Restore scrollback buffer on session (re)attach
+      if (msg.type === 'terminal:scrollback:result' && msg.sessionId === sessionId && !scrollbackRestored) {
+        scrollbackRestored = true;
+        if (msg.data) {
+          term.write(msg.data);
+        }
       }
     });
 
@@ -108,8 +118,9 @@ export function Terminal({ sessionId, isActive, send, subscribe, onFocus }: Term
       resize: { sessionId, cols, rows, },
     });
 
-    // Attach to session
+    // Attach to session and request scrollback to restore previous output
     send({ type: 'session:attach', sessionId });
+    send({ type: 'terminal:scrollback:request', sessionId });
 
     return () => {
       send({ type: 'session:detach', sessionId });
