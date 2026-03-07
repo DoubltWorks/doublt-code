@@ -37,6 +37,7 @@ export class BackgroundTaskService {
   private config: BackgroundTaskConfig;
   private appState: AppStateStatus = 'active';
   private keepAliveInterval: ReturnType<typeof setInterval> | null = null;
+  private appStateSubscription: ReturnType<typeof AppState.addEventListener> | null = null;
   private trackedCommands = new Map<string, LongRunningCommand>();
 
   constructor(
@@ -50,7 +51,7 @@ export class BackgroundTaskService {
 
   private setupListeners(): void {
     // Track app state transitions
-    AppState.addEventListener('change', (nextState) => {
+    this.appStateSubscription = AppState.addEventListener('change', (nextState) => {
       const previousState = this.appState;
       this.appState = nextState;
 
@@ -109,15 +110,11 @@ export class BackgroundTaskService {
   private onBackgrounded(): void {
     if (!this.config.keepAlive) return;
 
-    // Send periodic pings to keep connection alive
+    // Periodic check to keep the JS event loop alive so the OS
+    // doesn't suspend the WebSocket connection while backgrounded.
     this.keepAliveInterval = setInterval(() => {
-      if (this.client.isConnected) {
-        // The WebSocket will handle ping/pong internally
-        // We just need to prevent the OS from killing the connection
-      } else {
-        // Try to reconnect if connection was lost
-        // The client handles reconnection internally
-      }
+      // Keeping the interval running is sufficient to prevent suspension.
+      // The client's built-in reconnect logic handles actual reconnection.
     }, 15_000);
   }
 
@@ -130,10 +127,13 @@ export class BackgroundTaskService {
       this.keepAliveInterval = null;
     }
 
-    // Refresh data when coming back to foreground
+    // Refresh all data when coming back to foreground
     if (this.client.isConnected) {
       this.client.listSessions();
       this.client.listWorkspaces();
+      this.client.listTasks();
+      this.client.listApprovalQueue();
+      this.client.requestUsage();
     }
   }
 
@@ -158,6 +158,10 @@ export class BackgroundTaskService {
     if (this.keepAliveInterval) {
       clearInterval(this.keepAliveInterval);
       this.keepAliveInterval = null;
+    }
+    if (this.appStateSubscription) {
+      this.appStateSubscription.remove();
+      this.appStateSubscription = null;
     }
     this.trackedCommands.clear();
   }

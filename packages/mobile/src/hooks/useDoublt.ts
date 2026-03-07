@@ -89,13 +89,15 @@ interface DoubltState {
 
 const TIMELINE_DEFAULT_LIMIT = 50;
 
-/** Debounce helper: returns a function that delays execution */
-function debounce<T extends (...args: unknown[]) => void>(fn: T, ms: number): T {
+/** Debounce helper: returns a debounced function with a cancel method */
+function debounce<T extends (...args: unknown[]) => void>(fn: T, ms: number): T & { cancel: () => void } {
   let timer: ReturnType<typeof setTimeout>;
-  return ((...args: unknown[]) => {
+  const debounced = ((...args: unknown[]) => {
     clearTimeout(timer);
     timer = setTimeout(() => fn(...args), ms);
-  }) as unknown as T;
+  }) as unknown as T & { cancel: () => void };
+  debounced.cancel = () => clearTimeout(timer);
+  return debounced;
 }
 
 export function useDoublt() {
@@ -368,14 +370,31 @@ export function useDoublt() {
 
     // ─── Terminal sync events ─────────────────────────
 
-    client.on('terminalOutput', (output: TerminalOutput) => {
+    // Batch terminal output to avoid excessive re-renders
+    const terminalBuffer = new Map<string, string>();
+    let terminalFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const flushTerminalBuffer = () => {
+      terminalFlushTimer = null;
+      if (terminalBuffer.size === 0) return;
+      const buffered = new Map(terminalBuffer);
+      terminalBuffer.clear();
       setState(prev => {
         const terminalOutput = new Map(prev.terminalOutput);
-        const existing = terminalOutput.get(output.sessionId) ?? '';
-        const updated = (existing + output.data).slice(-50_000);
-        terminalOutput.set(output.sessionId, updated);
+        for (const [sessionId, data] of buffered) {
+          const existing = terminalOutput.get(sessionId) ?? '';
+          terminalOutput.set(sessionId, (existing + data).slice(-50_000));
+        }
         return { ...prev, terminalOutput };
       });
+    };
+
+    client.on('terminalOutput', (output: TerminalOutput) => {
+      const existing = terminalBuffer.get(output.sessionId) ?? '';
+      terminalBuffer.set(output.sessionId, existing + output.data);
+      if (!terminalFlushTimer) {
+        terminalFlushTimer = setTimeout(flushTerminalBuffer, 100);
+      }
     });
 
     // ─── Scrollback sync events ──────────────────────
@@ -544,6 +563,10 @@ export function useDoublt() {
     });
 
     return () => {
+      saveSessionsCache.cancel();
+      saveWorkspacesCache.cancel();
+      saveMessagesCache.cancel();
+      if (terminalFlushTimer) clearTimeout(terminalFlushTimer);
       backgroundService.destroy();
       notificationService.destroy();
       client.disconnect();

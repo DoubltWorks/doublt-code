@@ -118,8 +118,8 @@ export class DoubltClient extends EventEmitter {
         try {
           const msg = JSON.parse(event.data as string) as ServerMessage;
           this.handleMessage(msg);
-        } catch {
-          // Ignore parse errors
+        } catch (e) {
+          console.warn('[DoubltClient] JSON parse error:', e);
         }
       };
 

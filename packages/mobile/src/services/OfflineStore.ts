@@ -1,5 +1,5 @@
 import type { CachedMessage, SyncState } from '@doublt/shared/src/types/offline.js';
-import type { ChatMessage, SessionNotification } from '@doublt/shared';
+import type { ChatMessage, SessionNotification, CommandMacro } from '@doublt/shared';
 
 /**
  * Storage backend interface — matches AsyncStorage API shape.
@@ -100,6 +100,23 @@ export class OfflineStore {
       return data;
     } catch {
       return null;
+    }
+  }
+
+  // ─── Macros ──────────────────────────────────────
+
+  async cacheMacros(macros: CommandMacro[]): Promise<void> {
+    await this.storage.setItem(`${CACHE_PREFIX}macros`, JSON.stringify({ data: macros, cachedAt: Date.now() }));
+  }
+
+  async loadMacros(): Promise<CommandMacro[]> {
+    const raw = await this.storage.getItem(`${CACHE_PREFIX}macros`);
+    if (!raw) return [];
+    try {
+      const { data } = JSON.parse(raw) as { data: CommandMacro[]; cachedAt: number };
+      return data ?? [];
+    } catch {
+      return [];
     }
   }
 

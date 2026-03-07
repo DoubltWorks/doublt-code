@@ -12,7 +12,10 @@ export function VoiceInputButton({ onVoiceResult, size = 64 }: Props) {
   const [isListening, setIsListening] = useState(false);
   const [partialText, setPartialText] = useState('');
   const voiceServiceRef = useRef<VoiceService | null>(null);
+  const onVoiceResultRef = useRef(onVoiceResult);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  onVoiceResultRef.current = onVoiceResult;
 
   useEffect(() => {
     const service = new VoiceService();
@@ -24,7 +27,7 @@ export function VoiceInputButton({ onVoiceResult, size = 64 }: Props) {
 
     service.on('result', (text: string) => {
       setPartialText('');
-      onVoiceResult(text);
+      onVoiceResultRef.current(text);
     });
 
     service.on('partialResult', (text: string) => {
@@ -34,7 +37,7 @@ export function VoiceInputButton({ onVoiceResult, size = 64 }: Props) {
     return () => {
       service.destroy();
     };
-  }, [onVoiceResult]);
+  }, []);
 
   useEffect(() => {
     if (isListening) {

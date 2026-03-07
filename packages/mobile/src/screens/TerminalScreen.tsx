@@ -35,7 +35,7 @@ interface Props {
   onBack: () => void;
 }
 
-export function TerminalScreen({
+export const TerminalScreen = React.memo(function TerminalScreen({
   sessionInfo,
   terminalOutput,
   runningCommands,
@@ -139,7 +139,7 @@ export function TerminalScreen({
       </View>
     </KeyboardAvoidingView>
   );
-}
+});
 
 function formatElapsed(ms: number): string {
   const s = Math.floor(ms / 1000);
