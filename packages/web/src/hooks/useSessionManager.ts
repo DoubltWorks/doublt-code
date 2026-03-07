@@ -33,6 +33,8 @@ export function useSessionManager(
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const activeSessionIdRef = useRef(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
+  const pendingCreateRef = useRef(false);
+  const pendingCallbackRef = useRef<((sessionId: string) => void) | null>(null);
 
   useEffect(() => {
     const unsubscribe = subscribe((msg) => {
@@ -49,7 +51,13 @@ export function useSessionManager(
             if (prev.some((s) => s.id === msg.session.id)) return prev;
             return [...prev, msg.session];
           });
-          setActiveSessionId(msg.session.id);
+          if (pendingCallbackRef.current) {
+            pendingCallbackRef.current(msg.session.id);
+            pendingCallbackRef.current = null;
+          } else if (pendingCreateRef.current) {
+            setActiveSessionId(msg.session.id);
+            pendingCreateRef.current = false;
+          }
           break;
 
         case 'session:updated':
@@ -80,7 +88,12 @@ export function useSessionManager(
     }
   }, [connectionState, send]);
 
-  const createSession = useCallback((workspaceId?: string) => {
+  const createSession = useCallback((workspaceId?: string, onCreated?: (sessionId: string) => void) => {
+    if (onCreated) {
+      pendingCallbackRef.current = onCreated;
+    } else {
+      pendingCreateRef.current = true;
+    }
     send({
       type: 'session:create',
       options: {

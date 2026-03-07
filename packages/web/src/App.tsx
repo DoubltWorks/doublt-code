@@ -124,15 +124,19 @@ export function App() {
 
   const handleSplitH = useCallback(() => {
     if (activeSessionId) {
-      splitPane('horizontal', activeSessionId);
+      createSession(workspace.activeWorkspaceId ?? undefined, (newSessionId) => {
+        splitPane('horizontal', newSessionId);
+      });
     }
-  }, [splitPane, activeSessionId]);
+  }, [createSession, splitPane, activeSessionId, workspace.activeWorkspaceId]);
 
   const handleSplitV = useCallback(() => {
     if (activeSessionId) {
-      splitPane('vertical', activeSessionId);
+      createSession(workspace.activeWorkspaceId ?? undefined, (newSessionId) => {
+        splitPane('vertical', newSessionId);
+      });
     }
-  }, [splitPane, activeSessionId]);
+  }, [createSession, splitPane, activeSessionId, workspace.activeWorkspaceId]);
 
   // Keyboard shortcuts
   useKeyboardShortcuts({
