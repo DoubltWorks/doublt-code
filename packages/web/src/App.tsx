@@ -42,6 +42,11 @@ function getConnectionParams(): { wsUrl: string; token: string } {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${protocol}//${window.location.host}`;
 
+  // Clear token from URL to prevent leakage via browser history/screenshots
+  if (token) {
+    history.replaceState(null, '', window.location.pathname);
+  }
+
   return { wsUrl, token };
 }
 
@@ -277,9 +282,17 @@ export function App() {
 
           <PanelAccordion
             id="tasks"
-            title="Tasks"
-            badge={taskQueue.tasks.filter((t) => t.status === 'running' || t.status === 'queued').length || undefined}
-            badgeColor="var(--status-queued)"
+            title="Prompt Queue"
+            badge={
+              taskQueue.tasks.filter((t) => t.status === 'running').length > 0
+                ? `▶${taskQueue.tasks.filter((t) => t.status === 'queued').length}`
+                : taskQueue.tasks.filter((t) => t.status === 'queued').length || undefined
+            }
+            badgeColor={
+              taskQueue.tasks.filter((t) => t.status === 'running').length > 0
+                ? 'var(--green)'
+                : 'var(--status-queued)'
+            }
             isExpanded={sidebar.isPanelExpanded('tasks')}
             onToggle={sidebar.togglePanel}
           >
